@@ -5,8 +5,8 @@
 // Lived-in houses have full two-storey interiors with doors, stairs and
 // furniture; the rest are solid shells.
 import * as THREE from '../vendor/three.module.js';
-import { Builder, place } from './geo.js?v=3';
-import { T, rnd, srand } from './tex.js?v=3';
+import { Builder, place } from './geo.js?v=4';
+import { T, rnd, srand } from './tex.js?v=4';
 
 const V = THREE.Vector3;
 const G = 0.3, U = 3.3, TOP = 6.0;          // ground floor, upstairs floor, ceiling

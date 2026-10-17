@@ -3,8 +3,8 @@
 // two-bone IK and whose legs walk with you. The right hand never lets go of
 // the kitchen knife unless it's buried in a wall; the left hand strangles.
 import * as THREE from '../vendor/three.module.js';
-import { Person, BI } from './flesh.js?v=3';
-import { Pin } from './kinetic.js?v=3';
+import { Person, BI } from './flesh.js?v=4';
+import { Pin } from './kinetic.js?v=4';
 
 const V = THREE.Vector3, Q = THREE.Quaternion;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q();
@@ -62,10 +62,11 @@ export class Shape {
     this.grip = 'icepick';
     this.stab = 0; this.grabbing = null; this.grabT = 0; this.desk = { reach: 0 };
     this.down = 0; this.hp = 6; this.events = [];
-    // a controller's grip space: palm faces ∓X, the handle runs along Z (thumb side -Z).
-    // The hand model hangs fingers-down with the wrist up, so turn it to wrap the handle.
-    this.handOffset = new Q().setFromAxisAngle(new V(1, 0, 0), 0.7).multiply(new Q().setFromAxisAngle(new V(0, 1, 0), Math.PI));
-    this.wristOff = new V(0, Math.cos(0.7), Math.sin(0.7)).multiplyScalar(0.075);
+    // WebXR grip space: origin in the curled fingers, -Z along the handle toward the thumb,
+    // +X out of the back of the right hand, +Y back along the forearm. The hand model hangs
+    // fingers-down (wrist +Y, thumb +Z, palm inward), so a half turn about Y lines it up.
+    this.handOffset = new Q().setFromAxisAngle(new V(0, 1, 0), Math.PI);
+    this.wristOff = new V(0, 0.08, 0);
     this.knifeOffset = new Q(); this.knifePos = new V(); this.setGrip('icepick');
   }
   // ice pick: blade out of the little-finger side; forward: out of the thumb side
