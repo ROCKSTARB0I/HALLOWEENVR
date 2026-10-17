@@ -3,8 +3,8 @@
 // two-bone IK and whose legs walk with you. The right hand never lets go of
 // the kitchen knife unless it's buried in a wall; the left hand strangles.
 import * as THREE from '../vendor/three.module.js';
-import { Person, BI } from './flesh.js?v=2';
-import { Pin } from './kinetic.js?v=2';
+import { Person, BI } from './flesh.js?v=3';
+import { Pin } from './kinetic.js?v=3';
 
 const V = THREE.Vector3, Q = THREE.Quaternion;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q();
@@ -62,10 +62,14 @@ export class Shape {
     this.grip = 'icepick';
     this.stab = 0; this.grabbing = null; this.grabT = 0; this.desk = { reach: 0 };
     this.down = 0; this.hp = 6; this.events = [];
-    this.knifeOffset = new Q().setFromAxisAngle(new V(1, 0, 0), -0.35);
-    this.handOffset = new Q().setFromAxisAngle(new V(1, 0, 0), 1.25);
+    // a controller's grip space: palm faces ∓X, the handle runs along Z (thumb side -Z).
+    // The hand model hangs fingers-down with the wrist up, so turn it to wrap the handle.
+    this.handOffset = new Q().setFromAxisAngle(new V(1, 0, 0), 0.7).multiply(new Q().setFromAxisAngle(new V(0, 1, 0), Math.PI));
+    this.wristOff = new V(0, Math.cos(0.7), Math.sin(0.7)).multiplyScalar(0.075);
+    this.knifeOffset = new Q(); this.knifePos = new V(); this.setGrip('icepick');
   }
-  setGrip(g) { this.grip = g; this.knifeOffset.setFromAxisAngle(new V(1, 0, 0), g === 'icepick' ? -0.35 : Math.PI / 2); }
+  // ice pick: blade out of the little-finger side; forward: out of the thumb side
+  setGrip(g) { this.grip = g; this.knifeOffset.setFromAxisAngle(new V(1, 0, 0), g === 'icepick' ? -Math.PI / 2 : Math.PI / 2); this.knifePos.set(0, -0.004, g === 'icepick' ? 0.045 : -0.045); }
 
   // feet position (camera xz)
   get pos() { this.camera.getWorldPosition(_v3); return _v3.setY(this.floorY); }
@@ -113,16 +117,17 @@ export class Shape {
       this.stab = Math.max(0, this.stab - dt);
       const k = this.stab > 0 ? 1 - this.stab / 0.55 : 1;
       let off, rot;
-      if (this.stab > 0 && k < 0.35) { const u = k / 0.35; off = new V(0.2, lerp(-0.34, 0.05, u), lerp(-0.3, -0.15, u)); rot = -0.2 - u * 1.3; }
-      else if (this.stab > 0 && k < 0.6) { const u = (k - 0.35) / 0.25; off = new V(lerp(0.2, 0.06, u), lerp(0.05, -0.3, u), lerp(-0.15, -0.72, u)); rot = -1.5 + u * 1.4; }
-      else { const u = this.stab > 0 ? (k - 0.6) / 0.4 : 1; off = new V(lerp(0.06, 0.22, u), lerp(-0.3, -0.36, u), lerp(-0.72, -0.3, u)); rot = lerp(-0.1, 0.1, u); }
+      // fist upright (thumb up, blade down); cock back, drive down and forward
+      if (this.stab > 0 && k < 0.35) { const u = k / 0.35; off = new V(0.2, lerp(-0.27, 0.05, u), lerp(-0.45, -0.2, u)); rot = lerp(1.57, 1.1, u); }
+      else if (this.stab > 0 && k < 0.6) { const u = (k - 0.35) / 0.25; off = new V(lerp(0.2, 0.06, u), lerp(0.05, -0.3, u), lerp(-0.15, -0.72, u)); rot = lerp(1.1, 2.4, u); }
+      else { const u = this.stab > 0 ? (k - 0.6) / 0.4 : 1; off = new V(lerp(0.06, 0.2, u), lerp(-0.3, -0.27, u), lerp(-0.72, -0.45, u)); rot = lerp(2.4, 1.57, u); }
       if (this.stuck && this.stab <= 0) off.set(0.1, -0.3, -0.55);
       off.y += Math.sin(t * 1.3) * 0.006;
       R.pos.copy(off).applyQuaternion(cq).add(cp); R.quat.copy(cq).multiply(_q.setFromAxisAngle(new V(1, 0, 0), rot));
       // left: relaxed, or reaching for a throat
       const g = this.grabbing;
       if (g && this.deskNeck) { const tgt = this.deskNeck.clone(); L.pos.lerp(tgt, Math.min(1, dt * 10)); L.quat.copy(cq).multiply(_q.setFromAxisAngle(new V(0, 0, 1), -1.3)); }
-      else { const off2 = new V(-0.21, -0.42, -0.2); L.pos.lerp(off2.applyQuaternion(cq).add(cp), Math.min(1, dt * 12)); L.quat.copy(cq); }
+      else { const off2 = new V(-0.22, -0.32, -0.4); L.pos.lerp(off2.applyQuaternion(cq).add(cp), Math.min(1, dt * 12)); L.quat.copy(cq); }
     }
     L.vel.subVectors(L.pos, L.prev).multiplyScalar(1 / Math.max(dt, 1e-4)); R.vel.subVectors(R.pos, R.prev).multiplyScalar(1 / Math.max(dt, 1e-4));
     _q.copy(L.prevQ).invert().premultiply(L.quat); L.angVel = 2 * Math.acos(Math.min(1, Math.abs(_q.w))) / Math.max(dt, 1e-4);
@@ -140,16 +145,17 @@ export class Shape {
     P.place(head.x - bf.x * 0.13, this.floorY, head.z - bf.z * 0.13, this.bodyYaw);
     const eye = 1.8 * P.s / 1.03;
     const low = Math.max(0, Math.min(1, (eye - (head.y - this.floorY) - 0.12) / 0.7));
-    P.pose = { speed: this.speed, crouch: low, look: null, tilt: 0 };
+    // bones 'l' sit on the body's right side (it faces +Z), so they take the knife hand
+    P.pose = { speed: this.speed, crouch: low, look: null, tilt: 0, curlL: this.knifeHeld ? 0.95 : 0.3, curlR: this.grabbing ? 0.8 : this.gripL ? 0.85 : 0.3 };
     P.animate(dt, t);
     P.root.updateMatrixWorld(true);
     // arms
-    this.ik('r', this.hand.r.pos, this.hand.r.quat, bf);
-    this.ik('l', this.hand.l.pos, this.hand.l.quat, bf);
+    this.ik('l', this.hand.r.pos, this.hand.r.quat, bf);
+    this.ik('r', this.hand.l.pos, this.hand.l.quat, bf);
     // the knife rides in the right hand
     if (this.knifeHeld) {
       this.knife.position.copy(this.hand.r.pos); this.knife.quaternion.copy(this.hand.r.quat).multiply(this.knifeOffset);
-      this.knife.position.add(_v.set(0, -0.035, 0.02).applyQuaternion(this.hand.r.quat));
+      this.knife.position.add(_v.copy(this.knifePos).applyQuaternion(this.hand.r.quat));
     } else if (this.embedded) { this.knife.position.copy(this.embedded.pos); this.knife.quaternion.copy(this.embedded.quat); }
     this.knife.updateMatrixWorld(true);
     this.prevTip.copy(this.knifeTip);
@@ -165,7 +171,7 @@ export class Shape {
     const r = P.rest, iU = BI[side + 'Up'], iF = BI[side + 'Fo'], iH = BI[side + 'Ha'];
     const l1 = r[iU].distanceTo(r[iF]), l2 = r[iF].distanceTo(r[iH]) + 0.07 * P.s;
     const S = up.getWorldPosition(new V());
-    const wrist = target.clone().addScaledVector(new V(0, 1, 0).applyQuaternion(quat), 0.0).addScaledVector(new V(0, 0, 1).applyQuaternion(quat), 0.07);
+    const wrist = target.clone().add(this.wristOff.clone().applyQuaternion(quat));
     const dv = wrist.clone().sub(S); let dist = dv.length();
     if (dist > l1 + l2 - 0.002) { dv.multiplyScalar((l1 + l2 - 0.002) / dist); dist = l1 + l2 - 0.002; }
     const dh = dv.clone().normalize();
@@ -186,7 +192,7 @@ export class Shape {
     setDir(up, r[iF].clone().sub(r[iU]).normalize(), eDir);
     setDir(fo, r[iH].clone().sub(r[iF]).normalize(), S.clone().add(dv).sub(E).normalize());
     const hq = quat.clone().multiply(this.handOffset);
-    if (side === 'l' && this.grabbing) hq.multiply(_q.setFromAxisAngle(new V(0, 1, 0), 0.4));
+    if (side === 'r' && this.grabbing) hq.multiply(_q.setFromAxisAngle(new V(0, 1, 0), 0.4));
     ha.quaternion.copy(fo.getWorldQuaternion(new Q()).invert().multiply(hq)); ha.updateMatrixWorld(true);
   }
 
@@ -240,7 +246,7 @@ export class Shape {
       }
     }
     // ---- strangling with the left hand
-    const L = this.hand.l, wantGrab = vr ? input.gripL : input.grab;
+    const L = this.hand.l, wantGrab = vr ? input.gripL : input.grab; this.gripL = wantGrab;
     if (wantGrab && !this.grabbing) {
       let best = null, bd = vr ? 0.22 : 1.35;
       for (const p of people) {

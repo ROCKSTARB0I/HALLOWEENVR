@@ -3,7 +3,7 @@
 // floor, wall, furniture. Wounds pump in pulses, pools spread under the dead,
 // and anything wet drips.
 import * as THREE from '../vendor/three.module.js';
-import { T } from './tex.js?v=2';
+import { T } from './tex.js?v=3';
 
 const V = THREE.Vector3;
 const MAXD = 900, MAXS = 420;

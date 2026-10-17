@@ -5,8 +5,8 @@
 // Animated procedurally while alive; handed to kinetic.js rigid bodies when
 // they go limp, and blended back if they get up.
 import * as THREE from '../vendor/three.module.js';
-import { Body, Joint, Pin } from './kinetic.js?v=2';
-import { skinTexture, eyeTexture, vnoise, T } from './tex.js?v=2';
+import { Body, Joint, Pin } from './kinetic.js?v=3';
+import { skinTexture, eyeTexture, vnoise, T } from './tex.js?v=3';
 
 const V = THREE.Vector3, Q = THREE.Quaternion, E = THREE.Euler;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q(), _e = new E(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -22,6 +22,16 @@ const BONES = [
   ['lTh', 0, -0.092, 0.935, 0], ['lSh', 12, -0.098, 0.51, 0.008], ['lFt', 13, -0.1, 0.085, -0.02],
   ['rTh', 0, 0.092, 0.935, 0], ['rSh', 15, 0.098, 0.51, 0.008], ['rFt', 16, 0.1, 0.085, -0.02],
 ];
+// hands: palm on the hand bone; four fingers and a thumb, two bones each, so they curl
+// [name, z of knuckle, y of knuckle, proximal length, distal length, radius]
+export const FINGERS = [['I', 0.028, 0.838, 0.046, 0.042, 0.0088], ['M', 0.009, 0.835, 0.051, 0.046, 0.0092], ['R', -0.01, 0.838, 0.048, 0.042, 0.0086], ['P', -0.027, 0.846, 0.036, 0.032, 0.0074]];
+const thumbDirs = (x) => [new V(-x * 0.25, -0.75, 0.6).normalize(), new V(-x * 0.3, -0.85, 0.45).normalize()];
+for (const [L, x] of [['l', -1], ['r', 1]]) {
+  const hi = BONES.findIndex((b) => b[0] === L + 'Ha'), hx = 0.22 * x;
+  for (const [f, z, y, l1] of FINGERS) { BONES.push([L + f + '1', hi, hx, y, z]); BONES.push([L + f + '2', BONES.length - 1, hx, y - l1, z]); }
+  const tb = new V(hx - x * 0.008, 0.9, 0.03), [d1] = thumbDirs(x);
+  BONES.push([L + 'T1', hi, tb.x, tb.y, tb.z]); const t2 = tb.clone().addScaledVector(d1, 0.04); BONES.push([L + 'T2', BONES.length - 1, t2.x, t2.y, t2.z]);
+}
 export const BI = Object.fromEntries(BONES.map((b, i) => [b[0], i]));
 
 // --------------------------------------------------------------- mesh build
@@ -276,11 +286,20 @@ export class Person {
         ring(ax(0.95), 0.95, -0.006, 0.029, 0.026, { [L + 'Fo']: 0.8, [L + 'Ha']: 0.2 }, def.shortSleeves || def.gloves ? (def.gloves ? col(def.gloves) : skin) : sleeve, def.gloves ? 0 : (def.shortSleeves ? 1 : 0)),
         ring(ax(0.93), 0.93, -0.002, 0.026, 0.022, { [L + 'Ha']: 1 }, def.gloves ? col(def.gloves) : skin, def.gloves ? 0 : 1),
       ], 12);
-      // hand: palm, fingers, thumb
-      const hc = def.gloves ? col(def.gloves) : skin, hm = def.gloves ? 0 : 1, hx = 0.22 * x;
-      loft(D, [ring(hx, 0.925, 0.0, 0.012, 0.027, { [L + 'Ha']: 1 }, hc, hm), ring(hx, 0.88, 0.006, 0.014, 0.043, { [L + 'Ha']: 1 }, hc, hm),
-        ring(hx, 0.835, 0.008, 0.012, 0.042, { [L + 'Ha']: 1 }, hc, hm), ring(hx, 0.78, 0.012, 0.009, 0.036, { [L + 'Ha']: 1 }, hc, hm), ring(hx, 0.745, 0.014, 0.006, 0.022, { [L + 'Ha']: 1 }, hc, hm)], 10, { capB: true });
-      loft(D, [ring(hx - 0.004 * x, 0.9, 0.035, 0.011, 0.011, { [L + 'Ha']: 1 }, hc, hm), ring(hx - 0.01 * x, 0.86, 0.05, 0.009, 0.009, { [L + 'Ha']: 1 }, hc, hm), ring(hx - 0.012 * x, 0.835, 0.055, 0.007, 0.007, { [L + 'Ha']: 1 }, hc, hm)], 8, { capB: true });
+      // hand: palm, four jointed fingers, thumb
+      const hc = def.gloves ? col(def.gloves) : skin, hm = def.gloves ? 0 : 1, hx = 0.22 * x, H = L + 'Ha';
+      loft(D, [ring(hx, 0.95, -0.002, 0.024, 0.024, { [L + 'Fo']: 0.6, [H]: 0.4 }, hc, hm), ring(hx, 0.928, 0.0, 0.014, 0.028, { [H]: 1 }, hc, hm), ring(hx, 0.9, 0.003, 0.0135, 0.038, { [H]: 1 }, hc, hm),
+        ring(hx, 0.865, 0.002, 0.0145, 0.044, { [H]: 1 }, hc, hm), ring(hx, 0.838, 0.0, 0.013, 0.043, { [H]: 1 }, hc, hm), ring(hx, 0.83, 0.0, 0.01, 0.036, { [H]: 1 }, hc, hm)], 12, { capB: true });
+      for (const [f, z, y, l1, l2, r] of FINGERS) {
+        const F1 = L + f + '1', F2 = L + f + '2', ym = y - l1, yt = ym - l2;
+        loft(D, [ring(hx, y + 0.006, z, r * 0.9, r * 1.05, { [H]: 0.6, [F1]: 0.4 }, hc, hm), ring(hx, y - 0.006, z, r * 0.88, r, { [F1]: 1 }, hc, hm),
+          ring(hx, ym + 0.004, z, r * 0.8, r * 0.9, { [F1]: 0.6, [F2]: 0.4 }, hc, hm), ring(hx, ym - 0.004, z, r * 0.78, r * 0.86, { [F2]: 1 }, hc, hm),
+          ring(hx, yt + 0.006, z, r * 0.7, r * 0.78, { [F2]: 1 }, hc, hm), ring(hx, yt, z, r * 0.45, r * 0.5, { [F2]: 1 }, hc, hm)], 8, { capB: true });
+      }
+      { const [d1, d2] = thumbDirs(x), tb = new V(hx - x * 0.008, 0.9, 0.03), tm = tb.clone().addScaledVector(d1, 0.04), tt = tm.clone().addScaledVector(d2, 0.034);
+        const rp = (p, rx, rz, w) => ({ c: p.clone().multiplyScalar(s), rx: rx * s, rz: rz * s, w: W(w), color: hc, mat: hm });
+        loft(D, [rp(tb.clone().addScaledVector(d1, -0.012), 0.012, 0.014, { [H]: 1 }), rp(tb, 0.011, 0.012, { [H]: 0.5, [L + 'T1']: 0.5 }), rp(tm, 0.0095, 0.0105, { [L + 'T1']: 0.5, [L + 'T2']: 0.5 }),
+          rp(tt.clone().addScaledVector(d2, -0.006), 0.008, 0.009, { [L + 'T2']: 1 }), rp(tt, 0.005, 0.0055, { [L + 'T2']: 1 })], 8, { capB: true }); }
     }
     // head (sculpted, mouth slit)
     const D2 = D; buildHead(D2, this.sex, null, BI.jaw, BI.head);
@@ -453,6 +472,10 @@ export class Person {
     if (sit > 0 && !P.phone) { la = [-0.6, 0, -0.1]; le = -0.9; ra = [-0.6, 0, 0.1]; re = -0.9; }
     set('lUp', la[0], la[1], la[2]); set('rUp', ra[0], ra[1], ra[2]); set('lFo', le, 0, 0); set('rFo', re, 0, 0);
     set('lHa', 0, 0, 0); set('rHa', P.phone ? 0.3 : 0, 0, 0);
+    // fingers: relaxed, or closed on a phone, a gun, a door, a knife
+    const relax = 0.32 + Math.sin(t * 0.7 + this.phase) * 0.03;
+    this.curl('l', P.curlL ?? (P.pound || P.aim ? 0.95 : P.cower ? 0.55 : relax));
+    this.curl('r', P.curlR ?? (P.pound ? 0.95 : P.phone || P.aim ? 0.8 : P.light ? 0.85 : relax));
     // head looks at its target within the neck's range
     let hy = 0, hx = 0;
     if (P.look) {
@@ -474,6 +497,16 @@ export class Person {
     this.updateFace(dt, t);
   }
 
+  curl(side, amt) {
+    const k = side === 'l' ? 1 : -1, B = this.B;
+    for (const [f] of FINGERS) {
+      const spread = { I: 0.06, M: 0.02, R: -0.03, P: -0.08 }[f] * (1 - amt);
+      B[side + f + '1'].quaternion.setFromEuler(_e.set(spread, 0, k * amt * 1.35, 'YXZ'));
+      B[side + f + '2'].quaternion.setFromEuler(_e.set(0, 0, k * amt * 1.55, 'YXZ'));
+    }
+    B[side + 'T1'].quaternion.setFromEuler(_e.set(amt * 0.55, 0, k * amt * 0.45, 'YXZ'));
+    B[side + 'T2'].quaternion.setFromEuler(_e.set(0, 0, k * amt * 0.8, 'YXZ'));
+  }
   place(x, y, z, yaw) { this.root.position.set(x, y, z); this.yaw = yaw; this.root.rotation.set(0, yaw, 0); }
 
   // ------------------------------------------------------------- ragdoll

@@ -4,7 +4,7 @@
 // hide in closets, phone the sheriff, and run. Dr. Loomis hunts with a
 // revolver. The Shape can't die; he only gets back up.
 import * as THREE from '../vendor/three.module.js';
-import { Person } from './flesh.js?v=2';
+import { Person } from './flesh.js?v=3';
 
 const V = THREE.Vector3;
 const R = Math.random, clamp = (x, a, b) => Math.max(a, Math.min(b, x));

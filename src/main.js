@@ -2,15 +2,15 @@
 // desktop), and the frame loop that ties the town, the people, the physics,
 // the blood and the sound together.
 import * as THREE from '../vendor/three.module.js';
-import { buildTextures, T } from './tex.js?v=2';
-import { World } from './world.js?v=2';
-import { Physics } from './kinetic.js?v=2';
-import { buildTown } from './town.js?v=2';
-import { initFleshMaterials } from './flesh.js?v=2';
-import { Shape } from './shape.js?v=2';
-import { Night } from './mind.js?v=2';
-import { Crimson } from './crimson.js?v=2';
-import { Sound } from './sound.js?v=2';
+import { buildTextures, T } from './tex.js?v=3';
+import { World } from './world.js?v=3';
+import { Physics } from './kinetic.js?v=3';
+import { buildTown } from './town.js?v=3';
+import { initFleshMaterials } from './flesh.js?v=3';
+import { Shape } from './shape.js?v=3';
+import { Night } from './mind.js?v=3';
+import { Crimson } from './crimson.js?v=3';
+import { Sound } from './sound.js?v=3';
 
 const V = THREE.Vector3;
 const $ = (id) => document.getElementById(id);
