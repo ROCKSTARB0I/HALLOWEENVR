@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>HALLOWEENVR</title>
+<meta name="description" content="Haddonfield, Illinois. October 31, 1978. You are Michael Myers. A VR horror game for Meta Quest.">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Courier+Prime&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<canvas id="view" tabindex="0"></canvas>
+<div id="hud" hidden><span id="clock"></span><span id="tally"></span></div>
+<div id="caption" hidden></div>
+<div id="prompt" hidden></div>
+<div id="fade"></div>
+
+<div id="screen">
+  <svg class="pumpkin" viewBox="0 0 200 180" aria-hidden="true">
+    <defs><radialGradient id="glow" cx="50%" cy="58%" r="50%"><stop offset="0" stop-color="#ffd27a"/><stop offset="0.5" stop-color="#ff8a1c"/><stop offset="1" stop-color="#7a2c00"/></radialGradient></defs>
+    <path d="M100 30c-8 0-12-14-6-22l8 2c-4 6-2 14 4 18z" fill="#3a3a1a"/>
+    <path d="M100 34C40 34 14 70 14 108s34 66 86 66 86-28 86-66-26-74-86-74z" fill="#1a0b02"/>
+    <path d="M58 86l22 10-22 12zM142 86l-22 10 22 12zM92 112l8-14 8 14zM50 132c20 12 80 12 100 0l-10 18-10-8-10 10-10-10-10 10-10-10-10 8z" fill="url(#glow)" class="carve"/>
+  </svg>
+  <h1 class="logo">HALLOWEEN<span>VR</span></h1>
+  <p class="date">Haddonfield, Illinois &middot; October 31, 1978</p>
+  <p class="lede">You are Michael Myers.<br>Fifteen years ago, on this night, you came home.<br>You've come home again.</p>
+  <div class="actions">
+    <button id="enterVR">Enter VR</button>
+    <button id="playDesktop">Play on desktop</button>
+    <button id="howBtn">How to play</button>
+  </div>
+  <p id="vrNote"></p>
+  <p id="loading">Building Haddonfield&hellip;</p>
+  <div class="how" id="how" hidden>
+    <p><b>Quest.</b> Left stick walks. You never run, but when nobody is watching you, you close the distance faster. Right stick turns. Your right hand holds the knife: stab hard and it goes in. Left grip on a throat strangles and lifts. A opens doors and gets into cars. Right grip lets go of a knife stuck in a wall; grip the handle to take it back. B pauses.</p>
+    <p><b>Desktop.</b> WASD walk, mouse look, click to stab, hold right mouse to grab a throat, E for doors and cars, Q to tilt your head, N for free camera, Esc to pause.</p>
+    <p><b>The night.</b> Annie is at the Wallace house across from the Doyles. Lynda and Bob are coming over. Laurie is babysitting at the Doyle house. Dr. Loomis is watching your old house, and he is armed. If they see you, they run, they lock doors, they call Sheriff Brackett. Stay in the dark. Be patient. Dawn ends it.</p>
+  </div>
+</div>
+
+<script type="module" src="src/main.js?v=1"></script>
+</body>
+</html>
