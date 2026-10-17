@@ -230,7 +230,8 @@ function makeGuide() {
     G.t -= dt;
     if (G.t <= 0) { G.t = 0.3; G.obj = !started || night.over ? null : night.objective(); }
     const o = G.obj, show = G.on && started && !paused && !!o;
-    arrow.visible = marker.visible = show; el.hidden = !show; panel.visible = show && inVR;
+    // just the arrow: no marker, no objective text
+    arrow.visible = show; marker.visible = false; el.hidden = true; panel.visible = false;
     if (!show) return;
     const cp = camera.getWorldPosition(new V()), f = camera.getWorldDirection(new V()); f.y = 0; f.normalize();
     const d = (o.next || o.point).clone().sub(cp); d.y = 0; const dist = o.dist ?? d.length();
@@ -239,7 +240,6 @@ function makeGuide() {
     arrow.visible = dist > 2.5 && d.length() > 0.3;
     const top = o.who && o.inside ? o.who.head(new V()).add(new V(0, 0.35, 0)) : o.point.clone().add(new V(0, 2.4, 0));
     marker.position.copy(top); marker.scale.setScalar(Math.max(0.25, cp.distanceTo(top) * 0.035) * (1 + Math.sin(time * 4) * 0.08));
-    marker.visible = dist > 1.5;
     const txt = `${o.text} · ${Math.round(dist)} m${o.down ? ' · downstairs' : o.up ? ' · upstairs' : ''}`;
     if (txt !== G.last) { G.last = txt; el.textContent = txt; if (inVR) panel.draw([txt.length > 52 ? txt.slice(0, 50) + '…' : txt], 40, '#f0b070'); }
   };
