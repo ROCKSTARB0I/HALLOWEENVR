@@ -5,8 +5,8 @@
 // Animated procedurally while alive; handed to kinetic.js rigid bodies when
 // they go limp, and blended back if they get up.
 import * as THREE from '../vendor/three.module.js';
-import { Body, Joint, Pin } from './kinetic.js?v=1';
-import { skinTexture, eyeTexture, vnoise, T } from './tex.js?v=1';
+import { Body, Joint, Pin } from './kinetic.js?v=2';
+import { skinTexture, eyeTexture, vnoise, T } from './tex.js?v=2';
 
 const V = THREE.Vector3, Q = THREE.Quaternion, E = THREE.Euler;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q(), _e = new E(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();

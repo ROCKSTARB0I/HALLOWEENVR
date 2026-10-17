@@ -3,8 +3,8 @@
 // two-bone IK and whose legs walk with you. The right hand never lets go of
 // the kitchen knife unless it's buried in a wall; the left hand strangles.
 import * as THREE from '../vendor/three.module.js';
-import { Person, BI } from './flesh.js?v=1';
-import { Pin } from './kinetic.js?v=1';
+import { Person, BI } from './flesh.js?v=2';
+import { Pin } from './kinetic.js?v=2';
 
 const V = THREE.Vector3, Q = THREE.Quaternion;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q();

@@ -2,15 +2,15 @@
 // desktop), and the frame loop that ties the town, the people, the physics,
 // the blood and the sound together.
 import * as THREE from '../vendor/three.module.js';
-import { buildTextures, T } from './tex.js?v=1';
-import { World } from './world.js?v=1';
-import { Physics } from './kinetic.js?v=1';
-import { buildTown } from './town.js?v=1';
-import { initFleshMaterials } from './flesh.js?v=1';
-import { Shape } from './shape.js?v=1';
-import { Night } from './mind.js?v=1';
-import { Crimson } from './crimson.js?v=1';
-import { Sound } from './sound.js?v=1';
+import { buildTextures, T } from './tex.js?v=2';
+import { World } from './world.js?v=2';
+import { Physics } from './kinetic.js?v=2';
+import { buildTown } from './town.js?v=2';
+import { initFleshMaterials } from './flesh.js?v=2';
+import { Shape } from './shape.js?v=2';
+import { Night } from './mind.js?v=2';
+import { Crimson } from './crimson.js?v=2';
+import { Sound } from './sound.js?v=2';
 
 const V = THREE.Vector3;
 const $ = (id) => document.getElementById(id);
@@ -210,6 +210,44 @@ function textPanel(w, h) {
 }
 let vrCaption = null, vrMenu = null;
 
+// objective guide: a line of text, an arrow low in front of you, a marker over the target
+function makeGuide() {
+  const orange = 0xf0801a;
+  const sh = new THREE.Shape(); sh.moveTo(0, 0.09); sh.lineTo(0.06, -0.02); sh.lineTo(0.022, -0.005); sh.lineTo(0.022, -0.07); sh.lineTo(-0.022, -0.07); sh.lineTo(-0.022, -0.005); sh.lineTo(-0.06, -0.02); sh.lineTo(0, 0.09);
+  const ag = new THREE.ShapeGeometry(sh); ag.rotateX(-Math.PI / 2);          // lies flat, tip toward -z
+  const arrow = new THREE.Mesh(ag, new THREE.MeshBasicMaterial({ color: orange, transparent: true, opacity: 0.75, depthTest: false, fog: false, side: THREE.DoubleSide }));
+  arrow.renderOrder = 998; scene.add(arrow);
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.translate(32, 32); g.rotate(Math.PI / 4); g.strokeStyle = '#f0801a'; g.lineWidth = 6; g.strokeRect(-14, -14, 28, 28); g.fillStyle = 'rgba(240,128,26,0.35)'; g.fillRect(-14, -14, 28, 28);
+  const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true, fog: false }));
+  marker.renderOrder = 998; scene.add(marker);
+  const el = document.createElement('div'); el.id = 'objective';
+  el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);color:#f0b070;font-size:14px;letter-spacing:0.08em;text-shadow:0 1px 3px #000;pointer-events:none;text-align:center;max-width:70vw';
+  document.body.appendChild(el);
+  const panel = textPanel(0.9, 0.12); camera.add(panel); panel.position.set(0, -0.36, -0.95);
+  const G = { arrow, marker, el, panel, obj: null, t: 0, on: true, last: '' };
+  G.update = (dt) => {
+    G.t -= dt;
+    if (G.t <= 0) { G.t = 0.3; G.obj = !started || night.over ? null : night.objective(); }
+    const o = G.obj, show = G.on && started && !paused && !!o;
+    arrow.visible = marker.visible = show; el.hidden = !show; panel.visible = show && inVR;
+    if (!show) return;
+    const cp = camera.getWorldPosition(new V()), f = camera.getWorldDirection(new V()); f.y = 0; f.normalize();
+    const d = (o.next || o.point).clone().sub(cp); d.y = 0; const dist = o.dist ?? d.length();
+    arrow.position.copy(cp).addScaledVector(f, 0.75).add(new V(0, inVR ? -0.55 : -0.45, 0));
+    arrow.rotation.set(0, Math.atan2(-d.x, -d.z), 0);
+    arrow.visible = dist > 2.5 && d.length() > 0.3;
+    const top = o.who && o.inside ? o.who.head(new V()).add(new V(0, 0.35, 0)) : o.point.clone().add(new V(0, 2.4, 0));
+    marker.position.copy(top); marker.scale.setScalar(Math.max(0.25, cp.distanceTo(top) * 0.035) * (1 + Math.sin(time * 4) * 0.08));
+    marker.visible = dist > 1.5;
+    const txt = `${o.text} · ${Math.round(dist)} m${o.down ? ' · downstairs' : o.up ? ' · upstairs' : ''}`;
+    if (txt !== G.last) { G.last = txt; el.textContent = txt; if (inVR) panel.draw([txt.length > 52 ? txt.slice(0, 50) + '…' : txt], 40, '#f0b070'); }
+  };
+  return G;
+}
+let guide = null;
+addEventListener('keydown', (e) => { if (e.code === 'KeyH' && guide) { guide.on = !guide.on; caption(guide.on ? 'Objective guide on (H)' : 'Objective guide off (H)', 1.5); } });
+
 // ------------------------------------------------------------------ boot
 let world, phys, town, shape, night, crimson, sound, pool;
 async function boot() {
@@ -226,19 +264,24 @@ async function boot() {
   shape.setGrip(S.grip); shape.heightOffset = S.height;
   $('loading').textContent = 'Waking the neighbours…'; await tick();
   night = new Night({ scene, world, phys, town, shape, crimson, sound, caption, camera });
-  // Michael starts in his sister's bedroom, upstairs in the Myers house
-  const sp = town.spots.myers.bed1;
-  dolly.position.set(sp.x + 1.2 * Math.cos(sp.yaw), 3.3, sp.z); shape.floorY = 3.3; yaw = town.houses.myers.rot + Math.PI / 2; shape.yaw = yaw; shape.bodyYaw = yaw + Math.PI;
   vrCaption = textPanel(1.2, 0.3); camera.add(vrCaption); vrCaption.position.set(0, -0.28, -1.1);
   vrCaption.show = (t, s) => { vrCaption.visible = !!t && inVR; vrCaption.draw(wrap(t, 40)); vrCaption.t = s; };
   vrMenu = textPanel(1.0, 0.6); camera.add(vrMenu); vrMenu.position.set(0, 0, -1.2); vrMenu.draw(['PAUSED', '', 'B: resume', 'Hold both grips + A: restart'], 54, '#f0801a');
+  guide = makeGuide();
   $('loading').textContent = '';
   $('playDesktop').disabled = false;
   renderer.setAnimationLoop(frame);
 }
 function wrap(t, n) { const out = []; let line = ''; for (const w of (t || '').split(' ')) { if ((line + ' ' + w).trim().length > n) { out.push(line.trim()); line = w; } else line += ' ' + w; } if (line.trim()) out.push(line.trim()); return out; }
 
+function spawn() {
+  // Michael starts outside on the lawn across the street from the Myers house
+  camera.position.set(0, inVR ? 0 : 1.8, 0); camera.rotation.set(0, 0, 0);
+  dolly.position.set(-27, 0, 10); shape.floorY = 0; yaw = 0; shape.yaw = yaw; shape.bodyYaw = Math.PI;
+  dolly.rotation.set(0, 0, 0);
+}
 function start() {
+  spawn();
   $('screen').hidden = true; $('hud').hidden = false; started = true;
   sound.start(); night.start();
   canvas.focus();
@@ -271,8 +314,10 @@ function frame() {
     night.after(dt, time);
     for (const d of world.doors) d.update(dt);
     crimson.update(dt);
+    guide.update(dt);
     sound.update(dt, camera, time);
   } else if (started && inVR) { readInput(dt); }
+  if (guide && (!started || paused)) guide.update(dt);
   const cp = camera.getWorldPosition(_v.clone());
   if (pool) pool.update(dt, cp, time);
   moon.position.set(cp.x - 30, cp.y + 45, cp.z + 40); moon.target.position.set(cp.x, 0, cp.z);

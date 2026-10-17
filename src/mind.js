@@ -4,7 +4,7 @@
 // hide in closets, phone the sheriff, and run. Dr. Loomis hunts with a
 // revolver. The Shape can't die; he only gets back up.
 import * as THREE from '../vendor/three.module.js';
-import { Person } from './flesh.js?v=1';
+import { Person } from './flesh.js?v=2';
 
 const V = THREE.Vector3;
 const R = Math.random, clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -703,6 +703,39 @@ export class Night {
     n.body.face.talk = 1; setTimeout(() => { n.body.face.talk = 0; }, Math.min(secs * 700, 400 + text.length * 60));
     if (heard) this.caption(`${n.name}: ${text}`, secs);
   }
+  // --------------------------------------------------------- objective
+  // who to go after next and where to walk: { text, point }
+  objective() {
+    const o = this.objective_(); if (!o) return o;
+    // steer by the walking route (doors, stairs) rather than straight through walls
+    const mp = this.shape.pos, path = this.route(mp, o.who && o.inside ? o.who.pos : o.point);
+    let next = o.point, len = 0, prev = mp;
+    for (const n of path) { len += Math.hypot(n.x - prev.x, n.z - prev.z); prev = n; }
+    for (const n of path) { if (Math.hypot(n.x - mp.x, n.z - mp.z) > 1.4 || Math.abs(n.y - mp.y) > 1) { next = new V(n.x, n.y, n.z); break; } }
+    o.next = next; o.dist = path.length ? len + Math.hypot(o.point.x - prev.x, o.point.z - prev.z) : mp.distanceTo(o.point);
+    o.down = next.y < mp.y - 1; o.up = next.y > mp.y + 1;
+    return o;
+  }
+  objective_() {
+    const mp = this.shape.pos, N = this.N, H = this.town.houses, W = this.W;
+    const here = W.zoneAt(mp.x, mp.y + 0.5, mp.z);
+    const doorOf = (h) => { const a = h.nodes.back, b = h.nodes.porch, da = Math.hypot(a.x - mp.x, a.z - mp.z), db = Math.hypot(b.x - mp.x, b.z - mp.z); return new V((da < db ? a : b).x, 0, (da < db ? a : b).z); };
+    if (here?.house === 'myers' && this.kills === 0 && !this.leftHome) return { text: 'Leave the house by the back door. Loomis is watching the front.', point: new V(H.myers.nodes.back.x, 0, H.myers.nodes.back.z) };
+    if (here?.house !== 'myers') this.leftHome = true;
+    const ROOM = { living: 'living room', hall: 'front hall', kitchen: 'kitchen', dining: 'dining room', bed1: 'bedroom upstairs', bed2: 'bedroom upstairs', bed3: 'main bedroom upstairs', hallU: 'upstairs hall', bath: 'bathroom upstairs', closet: 'closet upstairs', stairs: 'stairs' };
+    const vics = ['annie', 'lynda', 'bob', 'laurie', 'elrod'].map((k) => N[k]).filter((n) => n.body.root.visible && !n.dead && !n.escaped);
+    if (!vics.length) {
+      if (!this.b1) return { text: 'Lynda and Bob are on their way to the Wallace house. Wait for them.', point: new V(H.wallace.nodes.porch.x, 0, H.wallace.nodes.porch.z) };
+      if (this.N.annie.inCar && this.annieCar.away) return { text: 'Annie drove off. She will be back.', point: new V(this.annieCar.home.x, 0, this.annieCar.home.z) };
+      return null;
+    }
+    const n = vics.map((v) => ({ v, d: v.pos.distanceTo(mp) - (W.zoneAt(v.pos.x, v.floorY + 0.5, v.pos.z)?.house === here?.house && here ? 20 : 0) })).sort((a, b) => a.d - b.d)[0].v;
+    const z = W.zoneAt(n.pos.x, n.floorY + 0.5, n.pos.z), house = z ? H[z.house] : null;
+    const where = n.inCar ? 'in her car, the Wallace driveway' : z ? `${house.label || 'a house'}, ${ROOM[z.room] || z.room}` : 'outside';
+    const point = z && here?.house !== z.house ? doorOf(house) : n.pos.clone().setY(n.floorY);
+    return { text: `${n.name} · ${where}`, point, who: n, inside: !!z && here?.house === z.house };
+  }
+
   // --------------------------------------------------------- movement
   steer(n, dt) {
     const W = this.W;
