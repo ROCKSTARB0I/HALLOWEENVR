@@ -3,8 +3,8 @@
 // two-bone IK and whose legs walk with you. The right hand never lets go of
 // the kitchen knife unless it's buried in a wall; the left hand strangles.
 import * as THREE from '../vendor/three.module.js';
-import { Person, BI } from './flesh.js?v=4';
-import { Pin } from './kinetic.js?v=4';
+import { Person, BI } from './flesh.js?v=5';
+import { Pin } from './kinetic.js?v=5';
 
 const V = THREE.Vector3, Q = THREE.Quaternion;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q();
@@ -55,6 +55,8 @@ export class Shape {
     this.headHidden = true; this.body.B.head.scale.setScalar(0.001);
     this.floorY = 0; this.yaw = 0; this.pitch = 0; this.tilt = 0; this.bodyYaw = 0;
     this.speed = 0; this.unseen = false; this.stepDist = 0;
+    // Evil Within: stalking the unaware builds his strength in three tiers
+    this.evil = { tier: 1, pts: 0, t3: 0 }; this.stunned = 0;
     this.knife = makeKnife(); scene.add(this.knife);
     this.knifeHeld = true; this.knifeTip = new V(); this.knifeBase = new V(); this.prevTip = new V(); this.tipVel = new V(); this.bladeDir = new V(0, -1, 0);
     this.stuck = null; this.embedded = null; this.blood = 0;
@@ -87,7 +89,8 @@ export class Shape {
     const right = new V(-fwd.z, 0, fwd.x);
     const mv = new V().addScaledVector(fwd, input.move.y).addScaledVector(right, input.move.x);
     const m = Math.min(1, mv.length()); if (m > 0) mv.normalize();
-    const top = this.down > 0 ? 0 : (this.unseen ? 2.35 : 1.38);
+    const T = this.evil.tier - 1, top = this.down > 0 ? 0 : (this.unseen ? [2.0, 2.35, 2.75][T] : [1.2, 1.38, 1.62][T]) * (this.stunned > 0 ? 0.4 : 1);
+    this.stunned = Math.max(0, this.stunned - dt);
     const want = mv.multiplyScalar(top * m);
     this.vel = (this.vel || new V()).lerp(want, Math.min(1, dt * 6));
     const head = this.camera.getWorldPosition(new V());
@@ -102,7 +105,7 @@ export class Shape {
     D.position.y = this.floorY + (vr ? (this.heightOffset ?? 0.12) : 0);
     // footsteps
     this.stepDist += this.speed * dt;
-    if (this.stepDist > 0.78) { this.stepDist = 0; this.events.push({ type: 'step', pos: p.clone().setY(this.floorY), loud: this.unseen ? 0.5 : 0.35 }); }
+    if (this.stepDist > 0.78) { this.stepDist = 0; this.events.push({ type: 'step', pos: p.clone().setY(this.floorY), loud: this.evil.tier === 1 ? 0.5 : 1 }); }
   }
 
   // hand poses: tracked controllers in VR, scripted in front of the camera on desktop
@@ -247,7 +250,7 @@ export class Shape {
       }
     }
     // ---- strangling with the left hand
-    const L = this.hand.l, wantGrab = vr ? input.gripL : input.grab; this.gripL = wantGrab;
+    const L = this.hand.l, wantGrab = (vr ? input.gripL : input.grab) && this.stunned <= 0; this.gripL = wantGrab;
     if (wantGrab && !this.grabbing) {
       let best = null, bd = vr ? 0.22 : 1.35;
       for (const p of people) {

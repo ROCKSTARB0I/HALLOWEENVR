@@ -4,7 +4,7 @@
 // hide in closets, phone the sheriff, and run. Dr. Loomis hunts with a
 // revolver. The Shape can't die; he only gets back up.
 import * as THREE from '../vendor/three.module.js';
-import { Person } from './flesh.js?v=4';
+import { Person } from './flesh.js?v=5';
 
 const V = THREE.Vector3;
 const R = Math.random, clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -157,7 +157,7 @@ export class Night {
     N.elrod.setPos(new V(S.elrod.bed1.x, 3.3, S.elrod.bed1.z), 0); this.routine(N.elrod, 'elrod');
     // Loomis behind the hedge across from the Myers house, watching it
     const m = H.myers; const watch = m.w(1.5, 0, -14 + 4.6 - 9);
-    N.loomis.setPos(new V(-22, 0, 9.2), Math.PI); N.loomis.state = 'watch'; N.loomis.post = new V(-22, 0, 9.2);
+    N.loomis.setPos(new V(-22, 0, 9.2), Math.PI); N.loomis.state = 'watch'; N.loomis.hunter = true; N.loomis.post = new V(-22, 0, 9.2);
     // TVs on, with sound
     for (const tv of this.town.tvs) { tv.audio = this.sound.ok ? this.sound.tv(tv.pos) : null; }
     this.caption("Haddonfield, Illinois. October 31st, 1978.", 5);
@@ -210,6 +210,9 @@ export class Night {
       this.steer(n, dt);
     }
     shape.unseen = seenBy === 0;
+    this.stalk(dt, mh);
+    this.listen(dt, mh);
+    this.rescues(dt);
     // scheduled beats of the night
     this.beats(dt);
     this.hunterLights();
@@ -240,7 +243,7 @@ export class Night {
     const dir = target.clone().sub(eye); dir.y = 0; dir.normalize();
     const cos = fwd.dot(dir);
     if (cos < (d < 1.6 ? -0.2 : 0.42)) return 0;
-    const range = 3 + 30 * Math.pow(lit, 0.8) * (this.shape.speed > 0.4 ? 1.25 : 0.9) + (n.light ? 10 : 0);
+    const range = (3 + 30 * Math.pow(lit, 0.8) * (this.shape.speed > 0.4 ? 1.25 : 0.9) + (n.light ? 10 : 0)) * (this.shape.evil.tier === 1 ? 0.55 : 1);
     if (d > range) return 0;
     if (this.W.blocked(eye.x, eye.y, eye.z, target.x, target.y, target.z)) return 0;
     return clamp((1 - d / range) * 2 * (0.4 + cos * 0.6), 0.05, 1);
@@ -267,7 +270,7 @@ export class Night {
     n.body.pose.look = null;
     if (n.hunter) return this.hunt(n, dt, vis, mChest);
     // awareness grows while they can see him
-    if (vis > 0) { n.aware += vis * dt * (n.state === 'routine' ? 1.6 : 3); n.lastSeen = mp.clone(); n.body.pose.look = mChest; }
+    if (vis > 0) { n.aware += vis * dt * (n.state === 'routine' ? 1.6 : 3) * (shape.evil.tier === 3 ? 6 : 1); n.lastSeen = mp.clone(); n.body.pose.look = mChest; }
     else n.aware = Math.max(0, n.aware - dt * 0.25);
     if (n.state === 'routine' || n.state === 'investigate') {
       if (n.aware > 0.15 && n.aware < 0.9 && vis > 0 && !n.glimpsed) { n.glimpsed = true; n.fear = Math.min(1, n.fear + 0.3); this.say(n, pick(['...Hello?', 'Is someone out there?', 'Who is that?'])); this.sound.ok && this.sound.sting(false); }
@@ -309,6 +312,23 @@ export class Night {
         return;
       }
       case 'seated': n.want = 0; return;
+      case 'rescue': {
+        // run at him and hit him until he lets go
+        const g = this.shape.grabbing;
+        if (!g || g.dead) { this.panic(n, mp, 'saw', true); return; }
+        n.body.pose.look = this.shape.headPos(new V());
+        const dm = Math.hypot(mp.x - n.pos.x, mp.z - n.pos.z);
+        if (dm < 3.5 && !this.W.blocked(n.pos.x, n.floorY + 1.2, n.pos.z, mp.x, mp.y + 1.2, mp.z)) { n.path = [{ x: mp.x, y: mp.y, z: mp.z }]; n.want = 3.0; }
+        else if (!n.path.length || n.repath < this.t) { n.repath = this.t + 0.6; n.path = this.route(n.pos, mp); n.want = 3.3; }
+        if (dm < 1.9) {
+          this.shape.release(); this.shape.stunned = 1.8; n.rescued = true;
+          this.sound.ok && this.sound.thump(this.shape.headPos(new V()), 1.0, 70);
+          this.caption(`${n.name} hits you and pulls ${g.name} free.`, 3);
+          const f = document.getElementById('fade'); f.style.background = '#200'; f.style.transition = 'none'; f.style.opacity = 0.5; setTimeout(() => { f.style.transition = 'opacity 0.6s'; f.style.opacity = 0; setTimeout(() => f.style.background = '#000', 600); }, 80);
+          this.panic(n, mp, 'fought', true);
+        }
+        return;
+      }
     }
   }
 
@@ -645,7 +665,7 @@ export class Night {
     while (ev.length) {
       const e = ev.shift();
       switch (e.type) {
-        case 'step': { const z = this.W.zoneAt(e.pos.x, e.pos.y + 0.3, e.pos.z); const surf = z ? 'wood' : Math.abs(e.pos.z) < 4.1 ? 'asphalt' : Math.abs(Math.abs(e.pos.z) - 6.85) < 0.8 ? 'asphalt' : 'grass'; S.ok && S.step(e.pos, surf, 0.28); this.hear(e.pos, z ? 4.5 : 3, 'step'); break; }
+        case 'step': { const z = this.W.zoneAt(e.pos.x, e.pos.y + 0.3, e.pos.z); const surf = z ? 'wood' : Math.abs(e.pos.z) < 4.1 ? 'asphalt' : Math.abs(Math.abs(e.pos.z) - 6.85) < 0.8 ? 'asphalt' : 'grass'; S.ok && S.step(e.pos, surf, 0.28 * (e.loud ?? 1)); this.hear(e.pos, (z ? 4.5 : 3) * (e.loud ?? 1), 'step'); break; }
         case 'hit': this.hit(e); break;
         case 'pullout': { S.ok && S.squelch(e.pos, 0.7); this.crimson.spray(e.pos, e.dir, 18, 2.2); break; }
         case 'thunk': { S.ok && S.thump(e.pos, 0.7, 120); this.caption('The blade goes through into the wall.', 2.5); break; }
@@ -665,6 +685,7 @@ export class Night {
     if (n.dead && !P.limp) return;
     const part = e.part, stab = e.kind === 'stab';
     let dmg = { head: 85, torso: 55, pelvis: 40 }[part] ?? 22; if (!stab) dmg *= 0.35;
+    if (this.shape.evil.tier === 3 && stab) dmg = 999;
     const fwd = new V(Math.sin(n.yaw), 0, Math.cos(n.yaw)); if (e.dir.clone().normalize().dot(fwd) > 0.4) dmg *= 1.3;
     P.wound(e.pos, e.normal, e.bone, stab);
     S.ok && (stab ? S.stab(e.pos) : S.slash(e.pos, e.speed));
@@ -703,6 +724,52 @@ export class Night {
     n.body.face.talk = 1; setTimeout(() => { n.body.face.talk = 0; }, Math.min(secs * 700, 400 + text.length * 60));
     if (heard) this.caption(`${n.name}: ${text}`, secs);
   }
+  // ------------------------------------------------ Evil Within (stalking)
+  // Watching someone who hasn't noticed you drains their nerve into your power.
+  // Tier I: hard to see, quiet, slow. Tier II: normal. Tier III (50 s): fast, every stab kills.
+  stalk(dt, mh) {
+    const E = this.shape.evil, f = this.shape.camera.getWorldDirection(new V());
+    let on = false;
+    for (const n of this.people) {
+      n.pool = Math.min(n.hunter ? 30 : 45, (n.pool ?? (n.hunter ? 30 : 45)) + dt * 0.3);
+      if (E.tier === 3 || this.inCar || n.dead || n.escaped || !n.body.root.visible || n.body.limp || n.seeing > 0 || n.pool <= 0) continue;
+      const hd = n.head(new V()), d = hd.distanceTo(mh); if (d > 30) continue;
+      if (hd.clone().sub(mh).normalize().dot(f) < 0.93) continue;
+      if (this.W.blocked(mh.x, mh.y, mh.z, hd.x, hd.y, hd.z)) continue;
+      const g = dt * Math.max(3, 14 - d * 0.35); n.pool -= g; E.pts += g; on = true;
+    }
+    if (E.tier === 1 && E.pts >= 60) { E.tier = 2; E.pts = 0; this.caption('Evil Within II. They will see you now, but you are stronger.', 4); this.sound.ok && this.sound.sting(false); }
+    else if (E.tier === 2 && E.pts >= 90) { E.tier = 3; E.t3 = 50; E.pts = 0; this.caption('Evil Within III. Nothing can stop you.', 4); this.sound.ok && this.sound.sting(true); }
+    if (E.tier === 3) { E.t3 -= dt; if (this.sound.ok) this.sound.exert = Math.max(this.sound.exert, 0.8); if (E.t3 <= 0) { E.tier = 2; this.caption('The rage fades.', 2.5); } }
+    this.sound.ok && this.sound.stalk(on);
+  }
+  // Stand still and you can hear frightened hearts through the walls.
+  listen(dt, mh) {
+    const still = this.shape.speed < 0.15 && !this.inCar;
+    this.stillT = still ? (this.stillT || 0) + dt : 0;
+    if (this.stillT < 1.2 || !this.sound.ok) return;
+    for (const n of this.people) {
+      if (n.hunter || n.dead || n.escaped || !n.body.root.visible || n.seeing > 0) continue;
+      const hd = n.head(new V()), d = hd.distanceTo(mh); if (d > 24) continue;
+      n.hb = (n.hb ?? 0) - dt;
+      if (n.hb <= 0) {
+        n.hb = 1.05 - n.fear * 0.5; this.sound.heartbeat(hd, (1 - d / 24) * (0.35 + n.fear * 0.65));
+        if (!this.toldListen) { this.toldListen = true; this.caption('Stand still and listen. You can hear their hearts.', 4); }
+      }
+    }
+  }
+  // Friends fight back: someone who sees you choking a friend comes at you.
+  rescues(dt) {
+    const g = this.shape.grabbing; if (!g || g.dead) return;
+    const gp = g.body.B.neck.getWorldPosition(new V());
+    for (const n of this.people) {
+      if (n === g || n.hunter || n.dead || n.escaped || n.rescued || !n.body.root.visible || n.body.limp || n.state === 'rescue' || n.state === 'hide') continue;
+      const hd = n.head(new V()); if (hd.distanceTo(gp) > 10 || this.W.blocked(hd.x, hd.y, hd.z, gp.x, gp.y, gp.z)) continue;
+      n.state = 'rescue'; n.repath = 0; n.fear = 1; n.inHide = false;
+      this.say(n, pick([`Let go of ${g.name}!`, 'Get off of her!', 'NO!']), 2);
+    }
+  }
+
   // --------------------------------------------------------- objective
   // who to go after next and where to walk: { text, point }
   objective() {

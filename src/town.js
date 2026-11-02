@@ -5,8 +5,8 @@
 // Lived-in houses have full two-storey interiors with doors, stairs and
 // furniture; the rest are solid shells.
 import * as THREE from '../vendor/three.module.js';
-import { Builder, place } from './geo.js?v=4';
-import { T, rnd, srand } from './tex.js?v=4';
+import { Builder, place } from './geo.js?v=5';
+import { T, rnd, srand } from './tex.js?v=5';
 
 const V = THREE.Vector3;
 const G = 0.3, U = 3.3, TOP = 6.0;          // ground floor, upstairs floor, ceiling
@@ -40,7 +40,7 @@ export function buildTown(scene, W, opts = {}) {
   B.material('lit', new THREE.MeshBasicMaterial({ color: 0xffffff }), { tile: 1, shadow: false, receive: false });
 
   const I = new THREE.Matrix4();
-  const town = { root: scene, houses: {}, doors: [], nav: { nodes: [], edges: [] }, spots: {}, tvs: [], flicker: [], cars: [], phones: [], pumpkins: [] };
+  const town = { root: scene, houses: {}, doors: [], nav: { nodes: [], edges: [] }, spots: {}, tvs: [], flicker: [], cars: [], phones: [], pumpkins: [], hedges: [] };
   const nodeId = (n) => { n.id = town.nav.nodes.length; town.nav.nodes.push(n); return n; };
   const edge = (a, b) => town.nav.edges.push([a.id, b.id]);
   const light = (o) => { const e = { on: true, flicker: 0, see: 0.6, range: 7, intensity: 6, color: 0xffd8a8, outdoor: false, ...o }; W.lights.push(e); return e; };
@@ -111,7 +111,7 @@ export function buildTown(scene, W, opts = {}) {
   const crown = new THREE.InstancedMesh(leafGeo, leafMat, leafCards.length);
   const mm = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new V(), uvOff = new Float32Array(leafCards.length * 2);
   leafCards.forEach((c, i) => { q.setFromEuler(e.set(rnd() * 6, rnd() * 6, rnd() * 6)); sc.setScalar(c.s); mm.compose(c.p, q, sc); crown.setMatrixAt(i, mm); });
-  crown.castShadow = true; crown.receiveShadow = true; scene.add(crown);
+  crown.castShadow = true; crown.receiveShadow = true; scene.add(crown); town.crown = crown;
   // fallen leaves across the lawns and gutters
   const N = opts.low ? 1800 : 3600;
   const fallen = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.11, 0.11).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: T.leaves.map, alphaTest: 0.5, roughness: 0.9 }), N);
@@ -414,7 +414,7 @@ function yard(B, W, H, town, light) {
   B.box('metal', m, 5.2, 0, -6.0, 5.28, 1.0, -5.92, 0x333333); B.box('paint', m, 5.05, 1.0, -6.25, 5.43, 1.22, -5.7, H.boarded ? 0x5a4a3a : 0x2a3a5a);
   // hedge along part of the front lot line, with a gap
   if (!H.shell || rnd() > 0.5) {
-    for (const [x0, x1] of [[-10.5, -6], [-4.5, -0.5]]) { B.box('hedge', m, x0, 0, -6.2, x1, 1.05, -5.4, 0xffffff); const b = H.wbox(x0, 0, -6.2, x1, 1.05, -5.4); W.addBox(...b); }
+    for (const [x0, x1] of [[-10.5, -6], [-4.5, -0.5]]) { const b = H.wbox(x0, 0, -6.2, x1, 1.05, -5.4); W.addBox(...b); town.hedges.push(b); }
   }
   // back fence (pickets) with a gate gap
   for (let x = -11; x < 11; x += 0.16) { if (x > 2 && x < 3.4) continue; B.box('trim', m, x, 0, 23.9, x + 0.09, 1.25 - ((x * 7) % 1) * 0, 23.96, 0xe6e2d6); }
@@ -424,7 +424,7 @@ function yard(B, W, H, town, light) {
   B.box('metal', m, 9.4, 0, 9.5, 9.95, 0.85, 10.05, 0x6a6a68); W.addBox(...H.wbox(9.4, 0, 9.5, 9.95, 0.85, 10.05));
   if (!H.boarded && (!H.shell || H.lit > 0.3)) {
     const y = H.shell ? 0.3 : G, p = H.w(0.2, y, -2.2);
-    town.pumpkins.push({ p, house: H.name });
+    town.pumpkins.push({ p, house: H.name, yaw: H.rot + Math.PI });
     const L = { x: p.x, y: p.y + 0.15, z: p.z, color: 0xff8a2a, intensity: 1.2, range: 4, see: 0.25, on: true, flicker: 2, outdoor: true }; W.lights.push(L);
   }
   // Annie's car in the Wallace drive; parked cars elsewhere

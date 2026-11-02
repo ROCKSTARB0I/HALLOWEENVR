@@ -188,6 +188,28 @@ export class Sound {
   click(pos) { this.lockClick(pos); }
   bodyFall(pos) { this.thump(pos, 0.9, 45); setTimeout(() => this.thump(pos, 0.4, 60), 140); }
 
+  // a heart through the wall: lub-dub, low and dull
+  heartbeat(pos, gain = 0.5) {
+    const C = this.C;
+    for (const [d, k] of [[0, 1], [0.16, 0.7]]) {
+      const t0 = C.currentTime + d, g = this.at(pos, gain * k * 1.6, { ref: 2.5, roll: 0.8, wet: 0.2 });
+      const o = C.createOscillator(); this.env(o.frequency, t0, [[0, 62], [0.12, 38]]);
+      const e = C.createGain(); this.env(e.gain, t0, [[0, 0], [0.012, 1], [0.15, 0]]);
+      const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160;
+      o.connect(lp).connect(e).connect(g); o.start(t0); o.stop(t0 + 0.2);
+    }
+  }
+  // a cold swell under the score while he stalks someone
+  stalk(on) {
+    const C = this.C;
+    if (!this.stalkG) {
+      this.stalkG = C.createGain(); this.stalkG.gain.value = 0; this.stalkG.connect(this.master);
+      for (const f of [55, 58.3, 110.5]) { const o = C.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; o.connect(lp).connect(this.stalkG); o.start(); }
+      const n = this.noise(), bp = C.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 6; const ng = C.createGain(); ng.gain.value = 0.25; n.connect(bp).connect(ng).connect(this.stalkG); n.start();
+    }
+    this.stalkG.gain.setTargetAtTime(on ? 0.05 : 0, C.currentTime, on ? 0.8 : 0.4);
+  }
+
   // --------------------------------------------------------------- voices
   // formant source: glottal saw through three vowel resonances
   voice(pos, { f0 = 220, dur = 1, vowel = 'a', gain = 0.5, contour = null, rasp = 0.1, vib = 0.02, male = false } = {}) {

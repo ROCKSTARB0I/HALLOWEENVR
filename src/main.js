@@ -2,15 +2,17 @@
 // desktop), and the frame loop that ties the town, the people, the physics,
 // the blood and the sound together.
 import * as THREE from '../vendor/three.module.js';
-import { buildTextures, T } from './tex.js?v=4';
-import { World } from './world.js?v=4';
-import { Physics } from './kinetic.js?v=4';
-import { buildTown } from './town.js?v=4';
-import { initFleshMaterials } from './flesh.js?v=4';
-import { Shape } from './shape.js?v=4';
-import { Night } from './mind.js?v=4';
-import { Crimson } from './crimson.js?v=4';
-import { Sound } from './sound.js?v=4';
+import { buildTextures, T } from './tex.js?v=5';
+import { World } from './world.js?v=5';
+import { Physics } from './kinetic.js?v=5';
+import { buildTown } from './town.js?v=5';
+import { initFleshMaterials } from './flesh.js?v=5';
+import { Shape } from './shape.js?v=5';
+import { Night } from './mind.js?v=5';
+import { Crimson } from './crimson.js?v=5';
+import { Sound } from './sound.js?v=5';
+import { dressTown } from './scenery.js?v=5';
+import { Post } from './post.js?v=5';
 
 const V = THREE.Vector3;
 const $ = (id) => document.getElementById(id);
@@ -32,7 +34,7 @@ if (renderer.xr.setFoveation) renderer.xr.setFoveation(1);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070c);
-scene.fog = new THREE.FogExp2(0x0a0e16, 0.034);
+scene.fog = new THREE.FogExp2(0x06080d, 0.032);   // darker than the sky so roofs and trees silhouette
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.04, 400);
 const dolly = new THREE.Group(); dolly.add(camera); scene.add(dolly);
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
@@ -40,9 +42,9 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 // --------------------------------------------------------------- the night
 function sky() {
   const g = new THREE.SphereGeometry(300, 32, 16);
-  const m = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { moon: { value: new V(-0.42, 0.55, 0.72).normalize() }, t: { value: 0 } },
+  const m = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { moon: { value: new V(-0.42, 0.55, 0.72).normalize() }, t: { value: 0 }, lin: { value: 0 } },
     vertexShader: 'varying vec3 vd; void main(){ vd = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }',
-    fragmentShader: `varying vec3 vd; uniform vec3 moon; uniform float t;
+    fragmentShader: `varying vec3 vd; uniform vec3 moon; uniform float t; uniform float lin;
       float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
       float n(vec3 p){ vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(mix(h(i),h(i+vec3(1,0,0)),f.x),mix(h(i+vec3(0,1,0)),h(i+vec3(1,1,0)),f.x),f.y),mix(mix(h(i+vec3(0,0,1)),h(i+vec3(1,0,1)),f.x),mix(h(i+vec3(0,1,1)),h(i+vec3(1,1,1)),f.x),f.y),f.z); }
@@ -55,7 +57,7 @@ function sky() {
         float cl = n(d * vec3(3.0, 8.0, 3.0) + vec3(t*0.004, 0.0, t*0.002)) * 0.6 + n(d * 9.0 + vec3(t*0.01,0,0)) * 0.4;
         cl = smoothstep(0.45, 0.8, cl) * smoothstep(0.0, 0.25, up);
         c = mix(c, vec3(0.06,0.065,0.08) + vec3(0.25,0.27,0.3) * pow(max(md,0.0), 8.0) * 0.6, cl * 0.85);
-        gl_FragColor = vec4(c, 1.0); }` });
+        gl_FragColor = vec4(lin > 0.5 ? pow(c, vec3(2.2)) : c, 1.0); }` });
   const s = new THREE.Mesh(g, m); s.frustumCulled = false; s.renderOrder = -1; scene.add(s); return m;
 }
 const skyMat = sky();
@@ -249,7 +251,7 @@ let guide = null;
 addEventListener('keydown', (e) => { if (e.code === 'KeyH' && guide) { guide.on = !guide.on; caption(guide.on ? 'Objective guide on (H)' : 'Objective guide off (H)', 1.5); } });
 
 // ------------------------------------------------------------------ boot
-let world, phys, town, shape, night, crimson, sound, pool;
+let world, phys, town, shape, night, crimson, sound, pool, scenery = null, post = null;
 async function boot() {
   const tick = () => new Promise((r) => setTimeout(r, 0));
   $('loading').textContent = 'Painting the houses…'; await tick();
@@ -257,6 +259,12 @@ async function boot() {
   $('loading').textContent = 'Building Lampkin Lane…'; await tick();
   world = new World(); phys = new Physics(world);
   town = buildTown(scene, world, { low: QUEST });
+  scenery = dressTown(scene, world, town, { low: QUEST });
+  // a dim night environment for reflections on paint, glass and the damp street
+  { const envScene = new THREE.Scene(), sk = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), skyMat.clone()); sk.material.uniforms.lin.value = 1; envScene.add(sk);
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(envScene, 0.02).texture; pm.dispose(); }
+  for (const m of town.meshes) if (m.name === 'asphalt') { m.material.roughness = 0.62; m.material.envMapIntensity = 1.4; }
+  if (!QUEST) post = new Post(renderer);
   pool = new LightPool(QUEST ? 6 : 9);
   crimson = new Crimson(scene, world);
   sound = new Sound(world);
@@ -314,6 +322,7 @@ function frame() {
     night.after(dt, time);
     for (const d of world.doors) d.update(dt);
     crimson.update(dt);
+    if (guide) guide.arrow.material.color.setHex([0xd8cfc0, 0xf0801a, 0xe02010][shape.evil.tier - 1]);
     guide.update(dt);
     sound.update(dt, camera, time);
   } else if (started && inVR) { readInput(dt); }
@@ -324,7 +333,11 @@ function frame() {
   skyMat.uniforms.t.value = time;
   if (capT > 0) { capT -= dt; if (capT <= 0) { $('caption').hidden = true; if (vrCaption) vrCaption.visible = false; } }
   if (!started) { camera.position.set(0, 0, 0); dolly.position.set(-24 + Math.sin(time * 0.05) * 6, 3.0, 9); camera.lookAt(-24, 3, -18); }
-  renderer.render(scene, camera);
+  if (scenery) scenery.update(dt, time, cp);
+  const usePost = post && !renderer.xr.isPresenting && S.post !== false;
+  skyMat.uniforms.lin.value = usePost ? 1 : 0;
+  if (usePost) post.render(scene, camera, { time, exposure: 1.35 * S.exposure, rage: shape && shape.evil.tier === 3 ? 0.55 + Math.sin(time * 3) * 0.15 : 0 });
+  else renderer.render(scene, camera);
 }
 boot().catch((e) => { $('loading').textContent = 'Failed to load: ' + e.message; console.error(e); });
 window.H = { get world() { return world; }, get shape() { return shape; }, get night() { return night; }, get town() { return town; }, get phys() { return phys; }, scene, camera, dolly, S, renderer, look(y, p = 0) { yaw = y; pitch = p; } };
