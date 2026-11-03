@@ -2,17 +2,20 @@
 // desktop), and the frame loop that ties the town, the people, the physics,
 // the blood and the sound together.
 import * as THREE from '../vendor/three.module.js';
-import { buildTextures, T } from './tex.js?v=5';
-import { World } from './world.js?v=5';
-import { Physics } from './kinetic.js?v=5';
-import { buildTown } from './town.js?v=5';
-import { initFleshMaterials } from './flesh.js?v=5';
-import { Shape } from './shape.js?v=5';
-import { Night } from './mind.js?v=5';
-import { Crimson } from './crimson.js?v=5';
-import { Sound } from './sound.js?v=5';
-import { dressTown } from './scenery.js?v=5';
-import { Post } from './post.js?v=5';
+import { buildTextures, T } from './tex.js?v=6';
+import { World } from './world.js?v=6';
+import { Physics } from './kinetic.js?v=6';
+import { buildTown } from './town.js?v=6';
+import { initFleshMaterials } from './flesh.js?v=6';
+import { Shape } from './shape.js?v=6';
+import { Night } from './mind.js?v=6';
+import { Crimson } from './crimson.js?v=6';
+import { Sound } from './sound.js?v=6';
+import { dressTown } from './scenery.js?v=6';
+import { Post } from './post.js?v=6';
+import { buildDistricts } from './districts.js?v=6';
+import { Story, CHAPTERS, unlocked } from './story.js?v=6';
+import { Cine } from './cine.js?v=6';
 
 const V = THREE.Vector3;
 const $ = (id) => document.getElementById(id);
@@ -42,9 +45,9 @@ addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); ca
 // --------------------------------------------------------------- the night
 function sky() {
   const g = new THREE.SphereGeometry(300, 32, 16);
-  const m = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { moon: { value: new V(-0.42, 0.55, 0.72).normalize() }, t: { value: 0 }, lin: { value: 0 } },
+  const m = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { moon: { value: new V(-0.42, 0.55, 0.72).normalize() }, t: { value: 0 }, lin: { value: 0 }, dusk: { value: 0 } },
     vertexShader: 'varying vec3 vd; void main(){ vd = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }',
-    fragmentShader: `varying vec3 vd; uniform vec3 moon; uniform float t; uniform float lin;
+    fragmentShader: `varying vec3 vd; uniform vec3 moon; uniform float t; uniform float lin; uniform float dusk;
       float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
       float n(vec3 p){ vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(mix(h(i),h(i+vec3(1,0,0)),f.x),mix(h(i+vec3(0,1,0)),h(i+vec3(1,1,0)),f.x),f.y),mix(mix(h(i+vec3(0,0,1)),h(i+vec3(1,0,1)),f.x),mix(h(i+vec3(0,1,1)),h(i+vec3(1,1,1)),f.x),f.y),f.z); }
@@ -53,10 +56,14 @@ function sky() {
         float md = dot(d, moon); c += vec3(0.5,0.55,0.65) * pow(max(md,0.0), 60.0) * 0.25 + vec3(0.18,0.2,0.26) * pow(max(md,0.0), 6.0) * 0.12;
         float disc = smoothstep(0.9993, 0.9996, md); float maria = n(d*180.0) * 0.25 + n(d*60.0)*0.2;
         c = mix(c, vec3(0.92,0.9,0.82) * (1.0 - maria), disc);
-        float st = step(0.9985, h(floor(d * 420.0))) * up * (0.4 + 0.6 * h(floor(d*420.0)+3.0)); c += vec3(st) * 0.6;
+        float st = step(0.9985, h(floor(d * 420.0))) * up * (0.4 + 0.6 * h(floor(d*420.0)+3.0)); c += vec3(st) * 0.6 * (1.0 - dusk);
+        // late afternoon: orange horizon to cold blue, a low sun
+        vec3 dc = mix(vec3(0.98, 0.52, 0.26), vec3(0.2, 0.27, 0.46), pow(up, 0.42));
+        float sd = max(md, 0.0); dc += vec3(1.0, 0.62, 0.3) * pow(sd, 10.0) * 0.6 + vec3(1.0, 0.85, 0.6) * smoothstep(0.9984, 0.9992, sd) * 1.5;
+        c = mix(c, dc, dusk);
         float cl = n(d * vec3(3.0, 8.0, 3.0) + vec3(t*0.004, 0.0, t*0.002)) * 0.6 + n(d * 9.0 + vec3(t*0.01,0,0)) * 0.4;
         cl = smoothstep(0.45, 0.8, cl) * smoothstep(0.0, 0.25, up);
-        c = mix(c, vec3(0.06,0.065,0.08) + vec3(0.25,0.27,0.3) * pow(max(md,0.0), 8.0) * 0.6, cl * 0.85);
+        c = mix(c, mix(vec3(0.06,0.065,0.08) + vec3(0.25,0.27,0.3) * pow(max(md,0.0), 8.0) * 0.6, vec3(0.55, 0.38, 0.34) + vec3(0.5, 0.3, 0.1) * pow(max(md,0.0), 4.0), dusk), cl * 0.85);
         gl_FragColor = vec4(lin > 0.5 ? pow(c, vec3(2.2)) : c, 1.0); }` });
   const s = new THREE.Mesh(g, m); s.frustumCulled = false; s.renderOrder = -1; scene.add(s); return m;
 }
@@ -66,7 +73,18 @@ moon.castShadow = true; moon.shadow.mapSize.setScalar(QUEST ? 1024 : 2048);
 Object.assign(moon.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 120 });
 moon.shadow.bias = -0.0006; moon.shadow.normalBias = 0.03;
 scene.add(moon, moon.target);
-scene.add(new THREE.HemisphereLight(0x2a3a58, 0x0c0906, 0.42));
+const hemi = new THREE.HemisphereLight(0x4a5a7c, 0x16120e, 0.72); scene.add(hemi);
+// night for most chapters, a cold orange late afternoon for the school
+let tod = 'night';
+function setTime(mode) {
+  tod = mode; const dusk = mode === 'dusk';
+  skyMat.uniforms.dusk.value = dusk ? 1 : 0;
+  skyMat.uniforms.moon.value.set(...(dusk ? [-0.86, 0.1, 0.5] : [-0.42, 0.55, 0.72])).normalize();
+  moon.color.setHex(dusk ? 0xffb07a : 0x9db3e0); moon.intensity = dusk ? 2.2 : 0.55;
+  hemi.color.setHex(dusk ? 0x8a98b8 : 0x4a5a7c); hemi.groundColor.setHex(dusk ? 0x3a2a1a : 0x16120e); hemi.intensity = dusk ? 0.9 : 0.72;
+  scene.fog.color.setHex(dusk ? 0x6a5a5a : 0x06080d); scene.fog.density = dusk ? 0.011 : 0.032;
+  scene.background.setHex(dusk ? 0x4a4a5a : 0x05070c);
+}
 
 // a fixed pool of real lights handed to the nearest lamps (no shader recompiles)
 class LightPool {
@@ -76,7 +94,8 @@ class LightPool {
     this.t -= dt;
     if (this.t <= 0) {
       this.t = 0.25;
-      const ranked = W.lights.filter((e) => e.on).map((e) => ({ e, s: e.intensity / (cam.distanceToSquared(_v.set(e.x, e.y, e.z)) + 9) * (e.zone && e.zone === W.zoneAt(cam.x, cam.y - 1.4, cam.z) ? 6 : 1) })).sort((a, b) => b.s - a.s).slice(0, this.L.length).map((r) => r.e);
+      const camZone = W.zoneAt(cam.x, cam.y - 1.4, cam.z);
+      const ranked = W.lights.filter((e) => e.on).map((e) => { const d2 = cam.distanceToSquared(_v.set(e.x, e.y, e.z)), r = e.range * 1.4; return { e, s: Math.sqrt(e.intensity) / (d2 + 9) * (d2 > r * r ? 0.08 : 1) * (e.zone && e.zone === camZone ? 6 : 1) }; }).sort((a, b) => b.s - a.s).slice(0, this.L.length).map((r) => r.e);
       this.want = new Set(ranked);
       for (const s of this.L) if (s.e && !this.want.has(s.e)) s.drop = true;
       for (const e of ranked) if (!this.L.some((s) => s.e === e)) { const free = this.L.find((s) => !s.e); if (free) { free.e = e; free.w = 0; free.drop = false; } }
@@ -211,6 +230,17 @@ function textPanel(w, h) {
   return m;
 }
 let vrCaption = null, vrMenu = null;
+const NOINPUT = { move: { x: 0, y: 0 }, snap: 0, stab: false, grab: false, use: false, letGo: false, retake: false, noclip: false, fly: 0, gripL: false, gripR: false, hands: null };
+// VR has no post pass: a soft shell around the head darkens and reddens the edges, and fades cuts
+function makeShell() {
+  const mat = new THREE.ShaderMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.BackSide, fog: false, uniforms: { red: { value: 0 }, black: { value: 0 } },
+    vertexShader: 'varying vec3 vp; void main(){ vp = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying vec3 vp; uniform float red, black; void main(){ float e = smoothstep(0.55, 1.0, 1.0 - max(-normalize(vp).z, 0.0)); vec3 c = vec3(0.35, 0.0, 0.0); float a = max(red * e * 0.85, black); gl_FragColor = vec4(c * (1.0 - black), a); }' });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.25, 24, 16), mat); m.renderOrder = 1000; m.frustumCulled = false; camera.add(m);
+  m.black = 0; m.blackRate = 3;
+  m.update = (dt, red) => { m.black = Math.max(0, m.black - dt * m.blackRate); mat.uniforms.red.value = red; mat.uniforms.black.value = inVR ? m.black : 0; m.visible = inVR && (red > 0.01 || m.black > 0.01); };
+  return m;
+}
 
 // objective guide: a line of text, an arrow low in front of you, a marker over the target
 function makeGuide() {
@@ -231,7 +261,7 @@ function makeGuide() {
   G.update = (dt) => {
     G.t -= dt;
     if (G.t <= 0) { G.t = 0.3; G.obj = !started || night.over ? null : night.objective(); }
-    const o = G.obj, show = G.on && started && !paused && !!o;
+    const o = G.obj, show = G.on && started && !paused && !!o && !cine?.active;
     // just the arrow: no marker, no objective text
     arrow.visible = show; marker.visible = false; el.hidden = true; panel.visible = false;
     if (!show) return;
@@ -251,14 +281,14 @@ let guide = null;
 addEventListener('keydown', (e) => { if (e.code === 'KeyH' && guide) { guide.on = !guide.on; caption(guide.on ? 'Objective guide on (H)' : 'Objective guide off (H)', 1.5); } });
 
 // ------------------------------------------------------------------ boot
-let world, phys, town, shape, night, crimson, sound, pool, scenery = null, post = null;
+let world, phys, town, shape, night, crimson, sound, pool, scenery = null, post = null, story = null, cine = null, vrShell = null;
 async function boot() {
   const tick = () => new Promise((r) => setTimeout(r, 0));
   $('loading').textContent = 'Painting the houses…'; await tick();
   buildTextures(QUEST); initFleshMaterials();
   $('loading').textContent = 'Building Lampkin Lane…'; await tick();
   world = new World(); phys = new Physics(world);
-  town = buildTown(scene, world, { low: QUEST });
+  town = buildTown(scene, world, { low: QUEST, extend: buildDistricts });
   scenery = dressTown(scene, world, town, { low: QUEST });
   // a dim night environment for reflections on paint, glass and the damp street
   { const envScene = new THREE.Scene(), sk = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), skyMat.clone()); sk.material.uniforms.lin.value = 1; envScene.add(sk);
@@ -272,6 +302,10 @@ async function boot() {
   shape.setGrip(S.grip); shape.heightOffset = S.height;
   $('loading').textContent = 'Waking the neighbours…'; await tick();
   night = new Night({ scene, world, phys, town, shape, crimson, sound, caption, camera });
+  vrShell = makeShell();
+  cine = new Cine({ camera, dolly, shape, isVR: () => inVR, fadeVR: (d) => { vrShell.black = 1; vrShell.blackRate = 1 / d; } });
+  night.cine = cine;
+  story = new Story({ night, shape, town, phys, crimson, sound, caption, cine, env: setTime, place: placeMichael, ended: () => { started = false; renderer.xr.getSession?.()?.end?.(); } });
   vrCaption = textPanel(1.2, 0.3); camera.add(vrCaption); vrCaption.position.set(0, -0.28, -1.1);
   vrCaption.show = (t, s) => { vrCaption.visible = !!t && inVR; vrCaption.draw(wrap(t, 40)); vrCaption.t = s; };
   vrMenu = textPanel(1.0, 0.6); camera.add(vrMenu); vrMenu.position.set(0, 0, -1.2); vrMenu.draw(['PAUSED', '', 'B: resume', 'Hold both grips + A: restart'], 54, '#f0801a');
@@ -282,16 +316,27 @@ async function boot() {
 }
 function wrap(t, n) { const out = []; let line = ''; for (const w of (t || '').split(' ')) { if ((line + ' ' + w).trim().length > n) { out.push(line.trim()); line = w; } else line += ' ' + w; } if (line.trim()) out.push(line.trim()); return out; }
 
-function spawn() {
-  // Michael starts outside on the lawn across the street from the Myers house
-  camera.position.set(0, inVR ? 0 : 1.8, 0); camera.rotation.set(0, 0, 0);
-  dolly.position.set(-27, 0, 10); shape.floorY = 0; yaw = 0; shape.yaw = yaw; shape.bodyYaw = Math.PI;
-  dolly.rotation.set(0, 0, 0);
+function placeMichael(p, faceYaw) {
+  // put the head over p, facing faceYaw (radians; 0 looks down -Z)
+  camera.position.set(0, inVR ? camera.position.y : 1.8, 0);
+  if (inVR) { dolly.rotation.set(0, faceYaw, 0); dolly.updateMatrixWorld(true); const c = camera.getWorldPosition(new V()); dolly.position.x += p.x - c.x; dolly.position.z += p.z - c.z; }
+  else { dolly.position.set(p.x, p.y || 0, p.z); yaw = faceYaw; pitch = 0; shape.yaw = yaw; }
+  shape.floorY = world.floorAt(p.x, p.z, (p.y || 0) + 0.3); shape.bodyYaw = faceYaw + Math.PI; shape.vel = new V();
 }
+let chosen = unlocked();
+function chapterButtons() {
+  const box = $('chapters'); if (!box) return; box.innerHTML = '';
+  for (const C of CHAPTERS) {
+    const b = document.createElement('button'); b.className = 'chap' + (C.id === chosen ? ' on' : ''); b.disabled = C.id > unlocked();
+    b.innerHTML = `<span>${C.id}</span>${C.title}`; b.onclick = () => { chosen = C.id; chapterButtons(); };
+    box.appendChild(b);
+  }
+}
+chapterButtons();
 function start() {
-  spawn();
+  camera.rotation.set(0, 0, 0);
   $('screen').hidden = true; $('hud').hidden = false; started = true;
-  sound.start(); night.start();
+  sound.start(); story.begin(chosen);
   canvas.focus();
 }
 $('playDesktop').disabled = true;
@@ -313,10 +358,16 @@ function frame() {
   const dt = Math.min(clock.getDelta(), 0.05); time += dt;
   if (started && !paused) {
     readInput(dt);
-    if (!inVR) { shape.yaw = yaw; shape.pitch = pitch; shape.tilt = tilt; }
-    shape.move(dt, input, inVR);
-    shape.hands(dt, input, inVR, time);
-    night.update(dt, time, input, inVR);
+    if (cine.active) {
+      if (input.use || input.stab || keys.has('Space') || keys.has('Enter')) cine.skip();
+      cine.update(dt);
+      night.update(dt, time, NOINPUT, inVR);
+    } else {
+      if (!inVR) { shape.yaw = yaw; shape.pitch = pitch; shape.tilt = tilt; }
+      shape.move(dt, input, inVR);
+      shape.hands(dt, input, inVR, time);
+      night.update(dt, time, input, inVR);
+    }
     phys.step(dt);
     shape.pose(dt, time, inVR);
     night.after(dt, time);
@@ -329,15 +380,24 @@ function frame() {
   if (guide && (!started || paused)) guide.update(dt);
   const cp = camera.getWorldPosition(_v.clone());
   if (pool) pool.update(dt, cp, time);
-  moon.position.set(cp.x - 30, cp.y + 45, cp.z + 40); moon.target.position.set(cp.x, 0, cp.z);
+  { const d = skyMat.uniforms.moon.value; moon.position.set(cp.x + d.x * 70, Math.max(18, d.y * 70), cp.z + d.z * 70); moon.target.position.set(cp.x, 0, cp.z); }
   skyMat.uniforms.t.value = time;
   if (capT > 0) { capT -= dt; if (capT <= 0) { $('caption').hidden = true; if (vrCaption) vrCaption.visible = false; } }
   if (!started) { camera.position.set(0, 0, 0); dolly.position.set(-24 + Math.sin(time * 0.05) * 6, 3.0, 9); camera.lookAt(-24, 3, -18); }
   if (scenery) scenery.update(dt, time, cp);
   const usePost = post && !renderer.xr.isPresenting && S.post !== false;
   skyMat.uniforms.lin.value = usePost ? 1 : 0;
-  if (usePost) post.render(scene, camera, { time, exposure: 1.35 * S.exposure, rage: shape && shape.evil.tier === 3 ? 0.55 + Math.sin(time * 3) * 0.15 : 0 });
+  // hurt, rage and tier-up pulses; a jolt when hit
+  let hurt = 0, rage = 0;
+  if (shape) {
+    shape.hurt = Math.max(0, (shape.hurt || 0) - dt * 1.4); shape.pulse = Math.max(0, (shape.pulse || 0) - dt * 1.2);
+    hurt = Math.min(1, shape.hurt + (shape.fallK || 0) * 0.5); rage = Math.max(shape.evil.tier === 3 ? 0.55 + Math.sin(time * 3) * 0.15 : 0, shape.pulse);
+    if (shape.jolt > 0 && !inVR && !cine?.active) { camera.rotation.x += (Math.random() - 0.5) * 0.06 * shape.jolt; camera.rotation.z += (Math.random() - 0.5) * 0.08 * shape.jolt; }
+    shape.jolt = Math.max(0, (shape.jolt || 0) - dt * 3);
+    if (vrShell) vrShell.update(dt, inVR ? Math.max(hurt, rage * 0.6) : 0);
+  }
+  if (usePost) post.render(scene, camera, { time, exposure: 1.35 * S.exposure, rage, hurt });
   else renderer.render(scene, camera);
 }
 boot().catch((e) => { $('loading').textContent = 'Failed to load: ' + e.message; console.error(e); });
-window.H = { get world() { return world; }, get shape() { return shape; }, get night() { return night; }, get town() { return town; }, get phys() { return phys; }, scene, camera, dolly, S, renderer, look(y, p = 0) { yaw = y; pitch = p; } };
+window.H = { get world() { return world; }, get shape() { return shape; }, get night() { return night; }, get town() { return town; }, get phys() { return phys; }, scene, camera, dolly, S, renderer, look(y, p = 0) { yaw = y; pitch = p; }, frame: () => frame() };

@@ -3,14 +3,14 @@
 // two-bone IK and whose legs walk with you. The right hand never lets go of
 // the kitchen knife unless it's buried in a wall; the left hand strangles.
 import * as THREE from '../vendor/three.module.js';
-import { Person, BI } from './flesh.js?v=5';
-import { Pin } from './kinetic.js?v=5';
+import { Person, BI } from './flesh.js?v=6';
+import { Pin } from './kinetic.js?v=6';
 
 const V = THREE.Vector3, Q = THREE.Quaternion;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q();
 const UP = new V(0, 1, 0);
 
-export const MICHAEL = { name: 'Michael', sex: 'm', height: 1.93, skin: 0xcaa58a, shirt: 0x2c3442, pants: 0x2c3442, shoes: 0x141210, belt: 0x2c3442,
+export const MICHAEL = { name: 'Michael', sex: 'm', height: 1.93, skin: 0xd2b49c, shirt: 0x283041, pants: 0x283041, shoes: 0x0e0c0b, belt: 0x222a38, build: 1.1, boots: true,
   mask: true, hairStyle: 'mask', hair: 0x3b2c20, seed: 31, iris: [0.02, 0.02, 0.02] };
 
 function makeKnife() {
@@ -52,6 +52,7 @@ export class Shape {
     this.scene = scene; this.W = world; this.phys = phys; this.camera = camera; this.dolly = dolly; this.fx = fx;
     this.body = new Person(scene, MICHAEL);
     this.body.mesh.traverse?.(() => {});
+    this.dressCoveralls();
     this.headHidden = true; this.body.B.head.scale.setScalar(0.001);
     this.floorY = 0; this.yaw = 0; this.pitch = 0; this.tilt = 0; this.bodyYaw = 0;
     this.speed = 0; this.unseen = false; this.stepDist = 0;
@@ -72,6 +73,23 @@ export class Shape {
     this.knifeOffset = new Q(); this.knifePos = new V(); this.setGrip('icepick');
   }
   // ice pick: blade out of the little-finger side; forward: out of the thumb side
+  // mechanic's coveralls: pointed collar, front zip, chest pocket with a flap, belt loops
+  dressCoveralls() {
+    const P = this.body, s = P.s, B = P.B, rest = P.rest;
+    const cloth = new THREE.MeshStandardMaterial({ color: 0x2a3244, roughness: 0.95 }), dark = new THREE.MeshStandardMaterial({ color: 0x1c2230, roughness: 0.9 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0x8a8a84, metalness: 1, roughness: 0.35 });
+    const at = (bone, x, y, z) => new V(x * s, y * s, z * s).sub(rest[BI[bone]]);
+    const add = (bone, geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.copy(at(bone, x, y, z)); m.rotation.set(rx, ry, rz); m.castShadow = true; B[bone].add(m); return m; };
+    for (const sd of [-1, 1]) {
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.075 * sd, -0.012, 0.01, 0.02 * sd, -0.1, 0.02], 3)); g.setIndex([0, 1, 2]); g.computeVertexNormals();
+      add('chest', g, new THREE.MeshStandardMaterial({ color: 0x2a3244, roughness: 0.95, side: THREE.DoubleSide }), 0.012 * sd, 1.505, 0.075, -0.25, 0, 0);
+      add('chest', new THREE.BoxGeometry(0.075 * s, 0.07 * s, 0.012 * s), dark, 0.075 * sd, 1.35, 0.11, -0.12, 0, 0).visible = sd < 0;   // pocket
+      add('chest', new THREE.BoxGeometry(0.08 * s, 0.025 * s, 0.016 * s), cloth, 0.075 * sd, 1.39, 0.113, -0.18, 0, 0).visible = sd < 0;  // flap
+    }
+    add('chest', new THREE.BoxGeometry(0.008 * s, 0.26 * s, 0.006 * s), metal, 0, 1.36, 0.118, -0.12);
+    add('spine', new THREE.BoxGeometry(0.008 * s, 0.2 * s, 0.006 * s), metal, 0, 1.13, 0.103, 0.02);
+    add('hips', new THREE.BoxGeometry(0.33 * s * 1.0, 0.035 * s, 0.22 * s), dark, 0, 1.02, 0.0);
+  }
   setGrip(g) { this.grip = g; this.knifeOffset.setFromAxisAngle(new V(1, 0, 0), g === 'icepick' ? -Math.PI / 2 : Math.PI / 2); this.knifePos.set(0, -0.004, g === 'icepick' ? 0.045 : -0.045); }
 
   // feet position (camera xz)
@@ -81,7 +99,12 @@ export class Shape {
   move(dt, input, vr) {
     const D = this.dolly;
     // turning
-    if (!vr) { D.rotation.y = this.yaw; this.camera.position.set(0, 1.8, 0); this.camera.rotation.set(this.pitch, 0, this.tilt, 'YXZ'); }
+    // knocked down: the view drops to the floor and tips over, then sits up and stands
+    let fall = 0, rise = 1;
+    if (this.down > 0) { const T = this.downDur || 4, el = T - this.down; fall = Math.min(1, el / 0.7); fall = fall * fall * (3 - 2 * fall); rise = this.down < 1.8 ? 1 - this.down / 1.8 : 0; }
+    const fk = fall * (1 - rise), y = rise < 0.5 ? lerp(0.35, 1.0, rise * 2) : lerp(1.0, 1.8, (rise - 0.5) * 2);
+    this.fallK = fk;
+    if (!vr) { D.rotation.y = this.yaw; this.camera.position.set(0, this.down > 0 ? lerp(1.8, y, fall) : 1.8, 0); this.camera.rotation.set(lerp(this.pitch, 0.25, fk), 0, this.tilt + 1.15 * fk * (rise < 0.5 ? 1 : 0), 'YXZ'); }
     else if (input.snap) { const before = this.camera.getWorldPosition(new V()); D.rotation.y += input.snap; D.updateMatrixWorld(true); const after = this.camera.getWorldPosition(new V()); D.position.x += before.x - after.x; D.position.z += before.z - after.z; }
     D.updateMatrixWorld(true);
     // walking direction relative to where the head faces
@@ -89,7 +112,7 @@ export class Shape {
     const right = new V(-fwd.z, 0, fwd.x);
     const mv = new V().addScaledVector(fwd, input.move.y).addScaledVector(right, input.move.x);
     const m = Math.min(1, mv.length()); if (m > 0) mv.normalize();
-    const T = this.evil.tier - 1, top = this.down > 0 ? 0 : (this.unseen ? [2.0, 2.35, 2.75][T] : [1.2, 1.38, 1.62][T]) * (this.stunned > 0 ? 0.4 : 1);
+    const T = this.evil.tier - 1, top = this.down > 0 ? 0 : (this.unseen ? [2.0, 2.35, 2.75][T] : [1.2, 1.38, 1.62][T]) * (this.stunned > 0 ? 0.4 : 1) * (this.slow ?? 1);
     this.stunned = Math.max(0, this.stunned - dt);
     const want = mv.multiplyScalar(top * m);
     this.vel = (this.vel || new V()).lerp(want, Math.min(1, dt * 6));
@@ -102,7 +125,7 @@ export class Shape {
     // floor (stairs, porches)
     const fy = this.W.floorAt(p.x, p.z, this.floorY + 0.05, 0.6);
     this.floorY += (fy - this.floorY) * Math.min(1, dt * (fy > this.floorY ? 14 : 9));
-    D.position.y = this.floorY + (vr ? (this.heightOffset ?? 0.12) : 0);
+    D.position.y = this.floorY + (vr ? (this.heightOffset ?? 0.12) - 1.2 * fk : 0);
     // footsteps
     this.stepDist += this.speed * dt;
     if (this.stepDist > 0.78) { this.stepDist = 0; this.events.push({ type: 'step', pos: p.clone().setY(this.floorY), loud: this.evil.tier === 1 ? 0.5 : 1 }); }
@@ -137,8 +160,27 @@ export class Shape {
     _q.copy(L.prevQ).invert().premultiply(L.quat); L.angVel = 2 * Math.acos(Math.min(1, Math.abs(_q.w))) / Math.max(dt, 1e-4);
   }
 
+  headHide(hide) { this.body.B.head.scale.setScalar(hide ? 0.001 : 1); }
+  // in cutscenes he is a shape in the dark: coveralls, hands and hair near black, the mask half-lit
+  silhouette(on, mask = 0.5) {
+    if (!this._mats) { this._mats = new Map(); this.body.root.traverse((o) => { if (!o.isMesh) return; for (const m of [].concat(o.material)) if (m.color && !this._mats.has(m)) this._mats.set(m, m.color.clone()); }); }
+    for (const [m, c] of this._mats) m.color.copy(c).multiplyScalar(on ? (m === this.body.headMat ? mask : 0.16) : 1);
+  }
+  // in a cutscene the body is posed by the shot, with the knife still in his right fist
+  posePuppet(dt, t) {
+    const P = this.body, h = this.cineHold();
+    P.root.visible = !h.hidden;
+    if (!P.limp) P.place(h.pos.x, h.pos.y ?? this.floorY, h.pos.z, h.yaw);
+    P.pose = { speed: h.speed || 0, look: h.look || null, tilt: h.tilt || 0, curlL: 0.95, curlR: h.curlR ?? 0.35, ...(h.pose || {}) };
+    P.animate(dt, t); P.root.updateMatrixWorld(true);
+    const hb = P.B.lHa, hq = hb.getWorldQuaternion(new Q()), grip = hq.clone().multiply(new Q().setFromAxisAngle(new V(0, 1, 0), Math.PI));
+    this.knife.position.copy(hb.getWorldPosition(new V()).add(new V(0, -0.075, 0.01).applyQuaternion(hq))).add(this.knifePos.clone().applyQuaternion(grip));
+    this.knife.quaternion.copy(grip).multiply(this.knifeOffset); this.knife.visible = this.hasKnife !== false && !h.hidden;
+  }
   // place the body under the head and reach for the hands
   pose(dt, t, vr) {
+    if (this.cineHold) return this.posePuppet(dt, t);
+    this.body.root.visible = true;
     const P = this.body, head = this.camera.getWorldPosition(new V());
     const fwd = this.camera.getWorldDirection(new V()); fwd.y = 0; if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
     // camera looks down -Z; the body faces +Z in its own space
@@ -168,6 +210,7 @@ export class Shape {
     this.tipVel.subVectors(this.knifeTip, this.prevTip).multiplyScalar(1 / Math.max(dt, 1e-4));
     if (this.tipVel.length() > 40) this.tipVel.set(0, 0, 0);
     this.knife.userData.blood.material.opacity = Math.min(0.95, this.blood);
+    this.knife.visible = this.hasKnife !== false;
   }
 
   ik(side, target, quat, bf) {
@@ -223,8 +266,8 @@ export class Shape {
       // free knife stuck in a wall with nothing on it
     }
     // take the knife back from a wall / body
-    if (!this.knifeHeld && (input.retake || (vr && input.gripR)) && this.hand.r.pos.distanceTo(this.knife.position) < 0.25) { this.knifeHeld = true; ev.push({ type: 'retook' }); }
-    if (!this.knifeHeld && !vr && input.use && this.pos.distanceTo(this.knife.position) < 1.6) { this.knifeHeld = true; this.embedded = null; this.pullOut(); }
+    if (this.hasKnife !== false && !this.knifeHeld && (input.retake || (vr && input.gripR)) && this.hand.r.pos.distanceTo(this.knife.position) < 0.25) { this.knifeHeld = true; ev.push({ type: 'retook' }); }
+    if (this.hasKnife !== false && !this.knifeHeld && !vr && input.use && this.pos.distanceTo(this.knife.position) < 1.6) { this.knifeHeld = true; this.embedded = null; this.pullOut(); }
     // ---- new contact
     if (this.knifeHeld && !this.stuck) {
       const sp = this.tipVel.length(), along = this.tipVel.dot(this.bladeDir);

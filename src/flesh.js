@@ -5,8 +5,8 @@
 // Animated procedurally while alive; handed to kinetic.js rigid bodies when
 // they go limp, and blended back if they get up.
 import * as THREE from '../vendor/three.module.js';
-import { Body, Joint, Pin } from './kinetic.js?v=5';
-import { skinTexture, eyeTexture, vnoise, T } from './tex.js?v=5';
+import { Body, Joint, Pin } from './kinetic.js?v=6';
+import { skinTexture, eyeTexture, vnoise, T } from './tex.js?v=6';
 
 const V = THREE.Vector3, Q = THREE.Quaternion, E = THREE.Euler;
 const _v = new V(), _v2 = new V(), _v3 = new V(), _q = new Q(), _q2 = new Q(), _e = new E(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -88,14 +88,27 @@ const HEAD_C = new V(0, 1.70, -0.004);
 const DROP = 0.035;            // the head is sculpted at 1.70 and set down onto the neck
 // sculpted head surface: returns position for angles (th around, ph latitude)
 function headPoint(th, ph, sex, out) {
-  const rx = sex === 'f' ? 0.075 : 0.079, ry = 0.112, rz = sex === 'f' ? 0.092 : 0.096;
+  const M = sex === 'mask';
+  const rx = sex === 'f' ? 0.075 : M ? 0.081 : 0.079, ry = M ? 0.116 : 0.112, rz = sex === 'f' ? 0.092 : M ? 0.099 : 0.096;
   let x = rx * Math.cos(ph) * Math.sin(th), y = ry * Math.sin(ph), z = rz * Math.cos(ph) * Math.cos(th);
   const Y = HEAD_C.y + y, front = Math.max(0, Math.cos(th));
   const g = (a, s) => Math.exp(-(a * a) / (s * s));
   // jaw narrows toward the chin, neck tucks under at the back
-  if (Y < 1.67) { const t = sm(1.67, 1.59, Y); x *= 1 - 0.13 * t * (0.3 + 0.7 * front); }
+  if (Y < 1.67) { const t = sm(1.67, 1.59, Y); x *= 1 - (M ? 0.05 : 0.13) * t * (0.3 + 0.7 * front); }
   if (Y < 1.64 && Math.cos(th) < 0.2) { const t = sm(1.64, 1.6, Y); x *= 1 - 0.3 * t; z *= 1 - 0.35 * t; }
   let d = 0;
+  if (M) {   // the mask: deep eye holes, a hard brow, high cheekbones, a long narrow nose, a thin shut mouth
+    d -= 0.019 * g(Math.abs(th) - 0.44, 0.19) * g(Y - 1.712, 0.014);
+    d += 0.009 * g(th, 0.7) * g(Y - 1.733, 0.009);
+    d += 0.011 * g(Math.abs(th) - 0.74, 0.16) * g(Y - 1.688, 0.013);
+    d -= 0.006 * g(Math.abs(th) - 0.62, 0.16) * g(Y - 1.655, 0.02);                                // hollow cheeks
+    const nz = Y > 1.705 ? 0.006 * sm(1.732, 1.705, Y) : Y > 1.66 ? 0.006 + 0.011 * sm(1.705, 1.662, Y) : 0.017 * sm(1.648, 1.662, Y);
+    d += nz * g(th, Y < 1.668 ? 0.1 : 0.06);
+    d += 0.0025 * g(th, 0.26) * (g(Y - 1.641, 0.006) + g(Y - 1.631, 0.006));
+    d += 0.006 * g(th, 0.5) * g(Y - 1.598, 0.016);
+    const n2 = new V(x / (rx * rx), y / (ry * ry), z / (rz * rz)).normalize();
+    return out.set(x, y, z).addScaledVector(n2, d).add(HEAD_C);
+  }
   d -= 0.008 * g(Math.abs(th) - 0.45, 0.2) * g(Y - 1.713, 0.016);                       // eye sockets
   d += 0.006 * g(th, 0.75) * g(Y - 1.731, 0.008);                                          // brow ridge
   d += 0.007 * g(Math.abs(th) - 0.78, 0.2) * g(Y - 1.693, 0.018);                          // cheekbones
@@ -144,7 +157,7 @@ function buildHead(D, sex, colors, jawB, headB) {
 
 export function eyePos(sex, side) {          // eyeball centre in rest space
   const p = headPoint(0.45 * side, Math.asin((1.713 - HEAD_C.y) / 0.112), sex, new V());
-  p.z -= 0.006; p.x = 0.0315 * side * (sex === 'f' ? 0.97 : 1); p.y -= DROP; return p;
+  p.z -= sex === 'mask' ? 0.016 : 0.006; p.x = 0.0315 * side * (sex === 'f' ? 0.97 : 1); p.y -= DROP; return p;
 }
 
 function hairTexture(c) {
@@ -165,14 +178,15 @@ function buildHair(def, sex) {
   for (let k = 0; k <= NT; k++) {
     const th = (k / NT * 2 - 1) * Math.PI, f = Math.cos(th);
     // hairline latitude by direction: high at the forehead, low at the nape
-    let stopY = f > 0.55 ? (style === 'balding' ? 1.79 : 1.79 - 0.035 * Math.min(1, Math.abs(th - 0.15) / 0.7) - (style === 'feather' || style === 'long' ? 0.008 : 0)) : f > 0.1 ? 1.735 : 1.70;
-    const endY = f > 0.55 ? stopY : f > 0.15 ? Math.max(len, 1.6) : len;
+    let stopY = f > 0.55 ? (style === 'balding' ? 1.79 : style === 'mask' ? 1.768 + Math.sin(th * 9) * 0.006 : 1.79 - 0.035 * Math.min(1, Math.abs(th - 0.15) / 0.7) - (style === 'feather' || style === 'long' ? 0.008 : 0)) : f > 0.1 ? (style === 'mask' ? 1.72 : 1.735) : 1.70;
+    const endY = style === 'mask' ? (f > 0.55 ? stopY : f > 0.15 ? 1.7 : f > -0.5 ? 1.665 : 1.64) : f > 0.55 ? stopY : f > 0.15 ? Math.max(len, 1.6) : len;
     const pts = [];
     for (let i = 0; i <= 12; i++) {
       const ph = Math.PI / 2 - i / 12 * (Math.PI / 2 + 0.45);
       headPoint(th, ph, sex, p); const n = p.clone().sub(HEAD_C).normalize();
-      const thick = style === 'balding' ? 0.004 : style === 'short' ? 0.007 : 0.011;
+      const thick = style === 'balding' ? 0.004 : style === 'short' ? 0.007 : style === 'mask' ? 0.016 + (i < 5 ? 0.018 * (1 - i / 5) : 0) + vnoise(th * 3.1 + 7, i * 0.9, 64, 4) * 0.014 : 0.011;
       p.addScaledVector(n, thick + (style === 'bun' && f < -0.3 && i < 6 ? 0.02 * Math.sin(i / 6 * Math.PI) : 0));
+      if (style === 'mask' && i > 1) p.y += (vnoise(th * 5 + 3, i, 64, 6) - 0.5) * 0.006;
       if (p.y < stopY && i > 0) break; pts.push(p.clone());
     }
     const last = pts[pts.length - 1].clone();
@@ -206,7 +220,7 @@ const PART_OF = { hips: 'pelvis', spine: 'torso', chest: 'torso', neck: 'head', 
 
 export class Person {
   constructor(scene, def) {
-    this.def = def; this.name = def.name; this.sex = def.sex || 'm';
+    this.def = def; this.name = def.name; this.sex = def.sex || 'm'; this.sculpt = def.mask ? 'mask' : this.sex;
     const s = this.s = (def.height || (this.sex === 'f' ? 1.66 : 1.8)) / 1.75;
     this.root = new THREE.Group(); scene.add(this.root);
     this.rest = BONES.map((b) => new V(b[2], b[3], b[4]).multiplyScalar(s));
@@ -230,7 +244,7 @@ export class Person {
     const top = coat || robe || shirt;
     const W = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [BI[k], v]));
     const ring = (x, y, z, rx, rz, w, color, mat = 0, extra = {}) => ({ c: new V(x, y, z).multiplyScalar(s), rx: rx * s, rz: rz * s, w: W(w), color, mat, ...extra });
-    const sh = f ? 0.93 : 1.06, hp = f ? 1.07 : 0.97;
+    const sh = (f ? 0.93 : 1.06) * (def.build || 1), hp = f ? 1.07 : 0.97;
     // torso
     const lowCol = robe || coat || pants;
     loft(D, [
@@ -246,7 +260,8 @@ export class Person {
       ring(0, 1.495, -0.01, 0.13, 0.07, { chest: 0.6, neck: 0.4 }, def.collarSkin ? skin : top),
       ring(0, 1.53, -0.012, 0.058, 0.054, { neck: 1 }, skin, 1),
     ], 18, { capA: true });
-    loft(D, [ring(0, 1.5, -0.012, 0.056, 0.052, { neck: 1 }, skin, 1), ring(0, 1.56, -0.01, 0.05, 0.048, { neck: 0.5, head: 0.5 }, skin, 1), ring(0, 1.625, -0.014, 0.047, 0.05, { head: 1 }, skin, 1)], 14);
+    { const nc = def.mask ? col(0xd8d4cb) : skin, nk = def.mask ? 1.14 : 1;
+      loft(D, [ring(0, 1.5, -0.012, 0.056 * nk, 0.052 * nk, { neck: 1 }, nc, 1), ring(0, 1.56, -0.01, 0.05 * nk, 0.048 * nk, { neck: 0.5, head: 0.5 }, nc, 1), ring(0, 1.625, -0.014, 0.047 * nk, 0.05 * nk, { head: 1 }, nc, 1)], 14); }
     // skirt / coat tails / robe hang from the hips and follow both thighs
     if (coat || robe || def.skirt) {
       const c = coat || robe || col(def.skirt), bottom = robe ? 0.12 : def.skirt ? 0.55 : 0.5;
@@ -267,12 +282,14 @@ export class Person {
         ring(0.1 * x, 0.2, -0.012, 0.038, 0.04, { [L + 'Sh']: 1 }, legCol, legMat),
         ring(0.1 * x, 0.11, -0.018, 0.04, 0.042, { [L + 'Sh']: 0.5, [L + 'Ft']: 0.5 }, shoes),
       ], 14);
+      const bt = def.boots ? 1.2 : 1;
+      if (def.boots) loft(D, [ring(0.1 * x, 0.2, -0.012, 0.05, 0.052, { [L + 'Sh']: 1 }, shoes), ring(0.1 * x, 0.1, -0.016, 0.052, 0.056, { [L + 'Sh']: 0.4, [L + 'Ft']: 0.6 }, shoes)], 14, { capA: true });
       loft(D, [
-        ring(0.1 * x, 0.075, -0.07, 0.034, 0.03, { [L + 'Ft']: 1 }, shoes),
-        ring(0.1 * x, 0.06, -0.04, 0.042, 0.045, { [L + 'Ft']: 1 }, shoes),
-        ring(0.102 * x, 0.05, 0.04, 0.046, 0.04, { [L + 'Ft']: 1 }, shoes),
-        ring(0.104 * x, 0.04, 0.12, 0.044, 0.03, { [L + 'Ft']: 1 }, shoes),
-        ring(0.105 * x, 0.035, 0.165, 0.03, 0.02, { [L + 'Ft']: 1 }, shoes),
+        ring(0.1 * x, 0.075, -0.07 * bt, 0.034 * bt, 0.03 * bt, { [L + 'Ft']: 1 }, shoes),
+        ring(0.1 * x, 0.06, -0.04, 0.042 * bt, 0.045 * bt, { [L + 'Ft']: 1 }, shoes),
+        ring(0.102 * x, 0.05, 0.04, 0.046 * bt, 0.04 * bt, { [L + 'Ft']: 1 }, shoes),
+        ring(0.104 * x, 0.04, 0.12 * bt, 0.044 * bt, 0.03 * bt, { [L + 'Ft']: 1 }, shoes),
+        ring(0.105 * x, 0.035, 0.165 * bt, 0.03 * bt, 0.02 * bt, { [L + 'Ft']: 1 }, shoes),
       ], 12, { capA: true, capB: true });
       // arms
       const sleeve = def.shortSleeves ? skin : (coat || robe || shirt), sm2 = def.shortSleeves ? 1 : 0;
@@ -302,7 +319,7 @@ export class Person {
           rp(tt.clone().addScaledVector(d2, -0.006), 0.008, 0.009, { [L + 'T2']: 1 }), rp(tt, 0.005, 0.0055, { [L + 'T2']: 1 })], 8, { capB: true }); }
     }
     // head (sculpted, mouth slit)
-    const D2 = D; buildHead(D2, this.sex, null, BI.jaw, BI.head);
+    const D2 = D; buildHead(D2, this.sculpt, null, BI.jaw, BI.head);
     // scale the head part
     const g = new THREE.BufferGeometry();
     const P = new Float32Array(D.p);
@@ -339,10 +356,11 @@ export class Person {
     const toHead = (p, drop = DROP) => { const q = p.clone(); q.y -= drop; return q.multiplyScalar(s).sub(headRest); };
     // hair
     if (def.hairStyle !== 'none') {
-      const hg = buildHair(def, this.sex); hg.translate(0, -DROP, 0); hg.scale(s, s, s); hg.translate(-headRest.x, -headRest.y, -headRest.z);
-      const hairCol = col(def.mask ? 0x3b2c20 : (def.hair || 0x3a2a1a));
+      const hg = buildHair(def, this.sculpt); hg.translate(0, -DROP, 0); hg.scale(s, s, s); hg.translate(-headRest.x, -headRest.y, -headRest.z);
+      const hairCol = col(def.mask ? 0x4a3524 : (def.hair || 0x3a2a1a));
       const hm = new THREE.Mesh(hg, new THREE.MeshStandardMaterial({ map: hairTexture(hairCol), roughness: 0.75, side: THREE.DoubleSide }));
       hm.castShadow = true; head.add(hm); this.hair = hm;
+      if (def.mask) this.addTufts(hg, hairCol);
     }
     // eyes, lids, brows
     this.eyes = []; this.lids = []; this.brows = [];
@@ -352,9 +370,9 @@ export class Person {
     const lidG = new THREE.SphereGeometry(0.0134 * s, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
     const lowG = new THREE.SphereGeometry(0.0131 * s, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.3); lowG.rotateX(Math.PI);
     for (const side of [-1, 1]) {
-      const c = toHead(eyePos(this.sex, side), 0);
+      const c = toHead(eyePos(this.sculpt, side), 0);
       const eye = new THREE.Mesh(eyeG, eyeMat); eye.position.copy(c); head.add(eye); this.eyes.push(eye);
-      if (def.mask) { eye.material = new THREE.MeshBasicMaterial({ color: 0x050505 }); }
+      if (def.mask) { eye.material = new THREE.MeshStandardMaterial({ color: 0x060504, roughness: 0.12, metalness: 0.1 }); eye.scale.setScalar(0.92); }   // dark eyes deep in the holes, one wet glint
       const lid = new THREE.Mesh(lidG, lidMat); lid.position.copy(c); head.add(lid); this.lids.push(lid);
       const low = new THREE.Mesh(lowG, lidMat); low.position.copy(c); low.rotation.x = -0.12; head.add(low);
       if (!def.mask) {
@@ -380,6 +398,24 @@ export class Person {
     if (def.mask) { this.lids.forEach((l) => l.visible = false); }
   }
 
+  // messy tufts over the mask's hair so the silhouette isn't a smooth helmet
+  addTufts(hg, c) {
+    const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S; const g = cv.getContext('2d');
+    for (let i = 0; i < 26; i++) { const x = 8 + Math.random() * 48; g.strokeStyle = `rgba(${c.r * 255 * (0.7 + Math.random() * 0.6) | 0},${c.g * 255 * (0.7 + Math.random() * 0.6) | 0},${c.b * 255 * (0.7 + Math.random() * 0.6) | 0},1)`; g.lineWidth = 1.5 + Math.random() * 2; g.beginPath(); g.moveTo(x, S); g.quadraticCurveTo(x + (Math.random() - 0.5) * 18, S * 0.5, x + (Math.random() - 0.5) * 26, 4 + Math.random() * 10); g.stroke(); }
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const geo = new THREE.PlaneGeometry(0.055 * this.s, 0.08 * this.s); geo.translate(0, 0.036 * this.s, 0);
+    const P = hg.attributes.position, N = hg.attributes.normal, n = 220;
+    const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75 }), n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new V(), nn = new V(), back = new V(0, -0.6, -1).normalize();
+    for (let i = 0; i < n; i++) {
+      const k = (Math.random() * P.count) | 0; p.fromBufferAttribute(P, k); nn.fromBufferAttribute(N, k).normalize();
+      if (nn.z > 0.3 && p.y < 0.26 * this.s) { i--; continue; }         // keep the face and forehead clear
+      const dir = nn.clone().multiplyScalar(0.22).add(back.clone().multiplyScalar(0.9)).normalize();
+      q.setFromUnitVectors(new V(0, 1, 0), dir).multiply(new THREE.Quaternion().setFromAxisAngle(new V(0, 1, 0), Math.random() * Math.PI));
+      m.compose(p.clone().addScaledVector(nn, -0.004), q, new V(1, 1, 1).multiplyScalar(0.7 + Math.random() * 0.7)); im.setMatrixAt(i, m);
+    }
+    im.castShadow = true; this.B.head.add(im);
+  }
   // ---------------------------------------------------------------- face
   updateFace(dt, t) {
     const F = this.face, def = this.def;
@@ -469,6 +505,10 @@ export class Person {
     if (P.hands) { la = [-0.9, 0.35, -0.2]; le = -1.6; ra = [-0.9, -0.35, 0.2]; re = -1.6; }   // defensive, hands up
     if (P.cower) { la = [-1.9, 0.6, -0.3]; le = -2.2; ra = [-1.9, -0.6, 0.3]; re = -2.2; }
     if (P.reach) { ra = [-1.3, 0, 0.05]; re = -0.2; }
+    if (P.handsToFace) { la = [-2.35, 0, 0.32]; le = -2.25; ra = [-2.35, 0, -0.32]; re = -2.25; }        // pulling a mask down over the head
+    if (P.lunge) { ra = [-1.6, -0.25, 0.05]; re = -0.1; la = [-0.8, 0.3, -0.25]; le = -1.2; set('chest', spineX * 0.5 + 0.3, 0.2, 0); }  // a sudden stab forward
+    if (P.shove) { la = [-1.45, 0.15, -0.05]; le = -0.25; ra = [-1.45, -0.15, 0.05]; re = -0.25; set('chest', spineX * 0.5 + 0.25, 0, 0); }
+    if (P.stagger) { la = [-0.35, 0, -0.7]; le = -0.4; ra = [-0.35, 0, 0.7]; re = -0.4; set('chest', spineX * 0.5 - 0.3, 0, 0); }
     if (sit > 0 && !P.phone) { la = [-0.6, 0, -0.1]; le = -0.9; ra = [-0.6, 0, 0.1]; re = -0.9; }
     set('lUp', la[0], la[1], la[2]); set('rUp', ra[0], ra[1], ra[2]); set('lFo', le, 0, 0); set('rFo', re, 0, 0);
     set('lHa', 0, 0, 0); set('rHa', P.phone ? 0.3 : 0, 0, 0);

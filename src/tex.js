@@ -241,6 +241,7 @@ export function buildTextures(lowRes = false) {
 // A face is painted onto the head's UV wrap: u around the head (0.5 = front),
 // v from chin (0) to crown (1). Eyes, lids and teeth are real geometry in
 // flesh.js, so this only carries skin, stubble, brows and lip colour.
+const sm2 = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 export function skinTexture(p) {
   const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
   const g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data;
@@ -270,10 +271,10 @@ export function skinTexture(p) {
     if (v > 0.75) { const t = clamp((v - 0.75) * 6); const h = p.hair; r = mix(r, h[0], t); gg = mix(gg, h[1], t); b = mix(b, h[2], t); }
     if (p.mask) {
       const m = 0.86 + n * 0.08 - pores * 0.02; r = m; gg = m * 0.99; b = m * 0.93;
-      const hole = Math.exp(-((Math.abs(fu) - 0.29) ** 2 / 0.004 + (v - 0.555) ** 2 / 0.0012));
+      const hd = Math.sqrt((Math.abs(fu) - 0.29) ** 2 / 0.0115 + (v - 0.552) ** 2 / 0.0019), hole = 1 - sm2(0.7, 1.0, hd);
       r *= 1 - hole * 0.9; gg *= 1 - hole * 0.9; b *= 1 - hole * 0.9;
       const shade = Math.exp(-((Math.abs(fu) - 0.3) ** 2 / 0.02 + (v - 0.6) ** 2 / 0.006)); r -= shade * 0.12; gg -= shade * 0.12; b -= shade * 0.1;
-      if (lipShape < 1) { r *= 0.92; gg *= 0.9; b *= 0.9; }
+      if (Math.abs(v - 0.233) < 0.004 && Math.abs(fu) < 0.17) { r *= 0.72; gg *= 0.7; b *= 0.7; }   // a thin, flat mouth line
       if (v > 0.75) { const t = clamp((v - 0.75) * 6); r = mix(r, 0.24, t); gg = mix(gg, 0.17, t); b = mix(b, 0.11, t); }
     }
     d[i] = clamp(r) * 255; d[i + 1] = clamp(gg) * 255; d[i + 2] = clamp(b) * 255; d[i + 3] = 255;

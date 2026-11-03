@@ -5,8 +5,8 @@
 // Lived-in houses have full two-storey interiors with doors, stairs and
 // furniture; the rest are solid shells.
 import * as THREE from '../vendor/three.module.js';
-import { Builder, place } from './geo.js?v=5';
-import { T, rnd, srand } from './tex.js?v=5';
+import { Builder, place } from './geo.js?v=6';
+import { T, rnd, srand } from './tex.js?v=6';
 
 const V = THREE.Vector3;
 const G = 0.3, U = 3.3, TOP = 6.0;          // ground floor, upstairs floor, ceiling
@@ -46,19 +46,21 @@ export function buildTown(scene, W, opts = {}) {
   const light = (o) => { const e = { on: true, flicker: 0, see: 0.6, range: 7, intensity: 6, color: 0xffd8a8, outdoor: false, ...o }; W.lights.push(e); return e; };
 
   // --------------------------------------------------------- ground & street
-  const X0 = -78, X1 = 78, Z0 = -46, Z1 = 46;
-  B.quad('grass', I, [X0, 0, Z1], [X1, 0, Z1], [X1, 0, Z0], [X0, 0, Z0]);
-  B.quad('asphalt', I, [X0, 0.012, 4], [X1, 0.012, 4], [X1, 0.012, -4], [X0, 0.012, -4]);
+  const X0 = -78, X1 = 78, Z0 = -46, Z1 = 46;            // the Lampkin Lane block
+  const GX0 = -104, GX1 = 164, GZ0 = -164, GZ1 = 112;     // all of Haddonfield
+  B.quad('grass', I, [GX0, 0, GZ1], [GX1, 0, GZ1], [GX1, 0, GZ0], [GX0, 0, GZ0]);
+  B.quad('asphalt', I, [-88, 0.012, 4], [88, 0.012, 4], [88, 0.012, -4], [-88, 0.012, -4]);
   for (const sg of [-1, 1]) {
     B.box({ def: 'concrete' }, I, X0, 0, sg > 0 ? 4 : -4.18, X1, 0.12, sg > 0 ? 4.18 : -4, 0xbbbbbb);       // curb
     B.quad('concrete', I, ...(sg > 0 ? [[X0, 0.03, 7.6], [X1, 0.03, 7.6], [X1, 0.03, 6.1], [X0, 0.03, 6.1]] : [[X0, 0.03, -6.1], [X1, 0.03, -6.1], [X1, 0.03, -7.6], [X0, 0.03, -7.6]]));
   }
   // painted centre line, faded
-  for (let x = X0; x < X1; x += 6) B.quad('trim', I, [x, 0.016, 0.06], [x + 3, 0.016, 0.06], [x + 3, 0.016, -0.06], [x, 0.016, -0.06], 0x8a8060);
-  // the block ends in dark woods: invisible walls so Michael stays on the block
-  W.addWall(X0 + 4, Z0 + 2, X0 + 4, Z1 - 2, -1, 5, { low: true }); W.addWall(X1 - 4, Z0 + 2, X1 - 4, Z1 - 2, -1, 5, { low: true });
-  W.addWall(X0 + 4, Z0 + 4, X1 - 4, Z0 + 4, -1, 5, { low: true }); W.addWall(X0 + 4, Z1 - 4, X1 - 4, Z1 - 4, -1, 5, { low: true });
-  town.bounds = { x0: X0 + 4, x1: X1 - 4, z0: Z0 + 4, z1: Z1 - 4 };
+  for (let x = -88; x < 88; x += 6) B.quad('trim', I, [x, 0.016, 0.06], [x + 3, 0.016, 0.06], [x + 3, 0.016, -0.06], [x, 0.016, -0.06], 0x8a8060);
+  // the town ends in dark woods: invisible walls at the edge
+  W.addWall(GX0 + 4, GZ0 + 4, GX0 + 4, GZ1 - 4, -1, 5, { low: true }); W.addWall(GX1 - 4, GZ0 + 4, GX1 - 4, GZ1 - 4, -1, 5, { low: true });
+  W.addWall(GX0 + 4, GZ0 + 4, GX1 - 4, GZ0 + 4, -1, 5, { low: true }); W.addWall(GX0 + 4, GZ1 - 4, GX1 - 4, GZ1 - 4, -1, 5, { low: true });
+  town.bounds = { x0: GX0 + 6, x1: GX1 - 6, z0: GZ0 + 6, z1: GZ1 - 6 };
+  town.block = { x0: X0, x1: X1, z0: Z0, z1: Z1 };
   town.escapes = [new V(X0 + 6, 0, 0), new V(X1 - 6, 0, 0)];
 
   // ------------------------------------------------------------- houses
@@ -101,10 +103,13 @@ export function buildTown(scene, W, opts = {}) {
   // street signs at the corner: LAMPKIN LN / ORANGE GROVE
   town.sign = { x: -70, z: 6.5 };
 
+  // ---------------------------------------------------------- the rest of town
+  const leafCards = [];
+  if (opts.extend) opts.extend(B, W, town, { wallRun, makeDoor, roof, shellHouse, tree: (x, z) => tree(B, W, x, z, leafCards), place, light });
+
   // ---------------------------------------------------------- trees
   const treeSpots = [];
   for (const L of LOTS) { const sgn = L.side === 'n' ? -1 : 1; treeSpots.push([L.x - 7.5 + rnd() * 2, sgn * (9 + rnd() * 2)], [L.x + 6 + rnd() * 2, sgn * (31 + rnd() * 3)]); if (rnd() > 0.4) treeSpots.push([L.x + 9.5, sgn * 5.2]); }
-  const leafCards = [];
   for (const [x, z] of treeSpots) tree(B, W, x, z, leafCards);
   const leafGeo = new THREE.PlaneGeometry(1, 1);
   const leafMat = new THREE.MeshStandardMaterial({ map: T.leaves.map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
@@ -113,12 +118,12 @@ export function buildTown(scene, W, opts = {}) {
   leafCards.forEach((c, i) => { q.setFromEuler(e.set(rnd() * 6, rnd() * 6, rnd() * 6)); sc.setScalar(c.s); mm.compose(c.p, q, sc); crown.setMatrixAt(i, mm); });
   crown.castShadow = true; crown.receiveShadow = true; scene.add(crown); town.crown = crown;
   // fallen leaves across the lawns and gutters
-  const N = opts.low ? 1800 : 3600;
+  const N = opts.low ? 2600 : 5200;
   const fallen = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.11, 0.11).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: T.leaves.map, alphaTest: 0.5, roughness: 0.9 }), N);
   let k = 0;
   while (k < N) {
-    const x = X0 + rnd() * (X1 - X0), z = Z0 + rnd() * (Z1 - Z0);
-    if (W.zoneAt(x, 0.5, z)) continue;
+    const x = GX0 + rnd() * (GX1 - GX0), z = GZ0 + rnd() * (GZ1 - GZ0);
+    if (W.zoneAt(x, 0.5, z) || (town.noLeaves && town.noLeaves(x, z))) continue;
     const gutter = Math.abs(Math.abs(z) - 3.8) < 0.4;
     if (Math.abs(z) < 4 && !gutter && rnd() > 0.15) continue;
     mm.compose(new V(x, 0.03 + rnd() * 0.01, z), q.setFromEuler(e.set(rnd() * 0.3, rnd() * 6.28, rnd() * 0.3)), sc.setScalar(0.7 + rnd() * 0.8));

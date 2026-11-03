@@ -4,7 +4,7 @@
 // hide in closets, phone the sheriff, and run. Dr. Loomis hunts with a
 // revolver. The Shape can't die; he only gets back up.
 import * as THREE from '../vendor/three.module.js';
-import { Person } from './flesh.js?v=5';
+import { Person } from './flesh.js?v=6';
 
 const V = THREE.Vector3;
 const R = Math.random, clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -54,54 +54,80 @@ export class Night {
     const W = this.W, nav = this.town.nav, nodes = nav.nodes.map((n) => ({ ...n, links: [] }));
     const link = (a, b) => { if (!a.links.includes(b)) a.links.push(b); if (!b.links.includes(a)) b.links.push(a); };
     for (const [a, b] of nav.edges) link(nodes[a], nodes[b]);
-    const B = this.town.bounds;
-    const outdoor = [];
-    const inside = (x, z) => Object.values(this.town.houses).some((h) => { const b = h.wbox(-6.2, 0, -3.8, 6.2, 0, 13.2); return x > b[0] && x < b[3] && z > b[2] && z < b[5]; });
-    for (let x = B.x0 + 2; x <= B.x1 - 2; x += 3.6) for (let z = B.z0 + 2; z <= B.z1 - 2; z += 3.6) {
+    const B = this.town.bounds, S = 3.6;
+    const feet = [...Object.values(this.town.houses).map((h) => { const b = h.wbox(-6.2, 0, -3.8, 6.2, 0, 13.2); return [b[0], b[2], b[3], b[5]]; }), ...(this.town.footprints || [])];
+    const inside = (x, z) => feet.some((f) => x > f[0] && x < f[2] && z > f[1] && z < f[3]);
+    const smallBoxes = W.boxes.filter((b) => b.max.y < 4);
+    const grid = new Map(), key = (i, j) => i * 100003 + j, outdoor = [];
+    for (let i = 0, x = B.x0 + 2; x <= B.x1 - 2; i++, x += S) for (let j = 0, z = B.z0 + 2; z <= B.z1 - 2; j++, z += S) {
       if (inside(x, z)) continue;
-      if (W.boxes.some((b) => x > b.min.x - 0.4 && x < b.max.x + 0.4 && z > b.min.z - 0.4 && z < b.max.z + 0.4 && b.max.y < 4)) continue;
-      const n = { id: nodes.length, x, y: 0, z, outside: true, links: [] }; nodes.push(n); outdoor.push(n);
+      if (smallBoxes.some((b) => x > b.min.x - 0.4 && x < b.max.x + 0.4 && z > b.min.z - 0.4 && z < b.max.z + 0.4)) continue;
+      const n = { id: nodes.length, x, y: 0, z, outside: true, links: [], gi: i, gj: j }; nodes.push(n); outdoor.push(n); grid.set(key(i, j), n);
     }
-    for (let i = 0; i < outdoor.length; i++) for (let j = i + 1; j < outdoor.length; j++) {
-      const a = outdoor[i], b = outdoor[j]; const d = Math.hypot(a.x - b.x, a.z - b.z);
-      if (d < 5.2 && this.walkable(a, b)) link(a, b);
-    }
+    for (const a of outdoor) for (const [di, dj] of [[1, 0], [0, 1], [1, 1], [1, -1]]) { const b = grid.get(key(a.gi + di, a.gj + dj)); if (b && this.walkable(a, b)) link(a, b); }
+    // spatial buckets for nearest-node lookups
+    this.nodeGrid = new Map(); const NG = 6;
+    for (const n of nodes) { const k = key(Math.floor(n.x / NG), Math.floor(n.z / NG)); let c = this.nodeGrid.get(k); if (!c) this.nodeGrid.set(k, c = []); c.push(n); }
+    this.NG = NG; this.nkey = key;
     for (const n of nodes) if ((n.name === 'porch' || n.name === 'back') && n.house) {
-      const near = outdoor.map((o) => ({ o, d: Math.hypot(o.x - n.x, o.z - n.z) })).filter((q) => q.d < 7).sort((a, b) => a.d - b.d);
+      const near = this.nodesNear(n, 8).filter((o) => o.outside && !o.house).map((o) => ({ o, d: Math.hypot(o.x - n.x, o.z - n.z) })).sort((a, b) => a.d - b.d);
       let c = 0; for (const q of near) { if (this.walkable(n, q.o)) { link(n, q.o); if (++c >= 3) break; } }
     }
     this.nodes = nodes; this.outdoor = outdoor;
   }
+  nodesNear(p, r) {
+    const out = [], NG = this.NG, i0 = Math.floor((p.x - r) / NG), i1 = Math.floor((p.x + r) / NG), j0 = Math.floor((p.z - r) / NG), j1 = Math.floor((p.z + r) / NG);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const c = this.nodeGrid.get(this.nkey(i, j)); if (c) out.push(...c); }
+    return out;
+  }
   walkable(a, b) {
-    const W = this.W, y = Math.max(a.y, b.y);
-    for (const w of W.walls) {
-      if (w.y1 < y + 0.2 || w.y0 > y + 1.6) continue;
-      const dx = b.x - a.x, dz = b.z - a.z, fx = w.bx - w.ax, fz = w.bz - w.az, den = dx * fz - dz * fx; if (Math.abs(den) < 1e-9) continue;
-      const t = ((w.ax - a.x) * fz - (w.az - a.z) * fx) / den, u = ((w.ax - a.x) * dz - (w.az - a.z) * dx) / den;
-      if (t > -0.02 && t < 1.02 && u > -0.05 && u < 1.05) return false;
+    const W = this.W, y = Math.max(a.y, b.y), dx = b.x - a.x, dz = b.z - a.z;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 3)), seen = new Set();
+    for (let s = 0; s <= steps; s++) {
+      let bad = false;
+      W.near(a.x + dx * s / steps, a.z + dz * s / steps, (w) => {
+        if (bad || seen.has(w)) return; seen.add(w);
+        if (w.y1 < y + 0.2 || w.y0 > y + 1.6) return;
+        const fx = w.bx - w.ax, fz = w.bz - w.az, den = dx * fz - dz * fx; if (Math.abs(den) < 1e-9) return;
+        const t = ((w.ax - a.x) * fz - (w.az - a.z) * fx) / den, u = ((w.ax - a.x) * dz - (w.az - a.z) * dx) / den;
+        if (t > -0.02 && t < 1.02 && u > -0.05 && u < 1.05) bad = true;
+      });
+      if (bad) return false;
     }
     return true;
   }
   nearestNode(p, filter = null) {
-    let best = null, bd = 1e9;
-    for (const n of this.nodes) { if (filter && !filter(n)) continue; const d = (n.x - p.x) ** 2 + ((n.y - p.y) * 3) ** 2 + (n.z - p.z) ** 2; if (d < bd && (Math.abs(n.y - p.y) < 1.5)) { if (d > 64 || this.W.blocked(p.x, p.y + 1, p.z, n.x, n.y + 1, n.z)) { if (d < bd && !best) { best = n; bd = d + 1e6; } continue; } bd = d; best = n; } }
-    return best;
+    let best = null, bd = 1e9, fallback = null, fd = 1e9;
+    for (const r of [8, 20, 60]) {
+      for (const n of this.nodesNear(p, r)) {
+        if (filter && !filter(n)) continue; if (Math.abs(n.y - p.y) >= 1.5) continue;
+        const d = (n.x - p.x) ** 2 + ((n.y - p.y) * 3) ** 2 + (n.z - p.z) ** 2;
+        if (d < fd) { fd = d; fallback = n; }
+        if (d < bd && d <= 64 && !this.W.blocked(p.x, p.y + 1, p.z, n.x, n.y + 1, n.z)) { bd = d; best = n; }
+      }
+      if (best) return best;
+    }
+    return fallback;
   }
   route(from, to) {
     const a = this.nearestNode(from), b = to.links ? to : this.nearestNode(to);
     if (!a || !b) return [];
-    const open = new Map([[a, 0]]), came = new Map(), g = new Map([[a, 0]]), h = (n) => Math.hypot(n.x - b.x, (n.y - b.y) * 2, n.z - b.z);
-    while (open.size) {
-      let cur = null, cf = 1e9; for (const [n, f] of open) if (f < cf) { cf = f; cur = n; }
-      if (cur === b) { const out = [cur]; while (came.has(cur)) { cur = came.get(cur); out.unshift(cur); } return out; }
-      open.delete(cur);
+    // A* with a binary heap
+    const heap = [], push = (n, f) => { heap.push([f, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = i * 2 + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top[1]; };
+    const came = new Map(), g = new Map([[a, 0]]), done = new Set(), h = (n) => Math.hypot(n.x - b.x, (n.y - b.y) * 2, n.z - b.z);
+    push(a, h(a));
+    while (heap.length) {
+      const cur = pop(); if (done.has(cur)) continue; done.add(cur);
+      if (cur === b) { const out = [cur]; let c = cur; while (came.has(c)) { c = came.get(c); out.unshift(c); } return out; }
       for (const nb of cur.links) {
         const cost = g.get(cur) + Math.hypot(nb.x - cur.x, nb.y - cur.y, nb.z - cur.z) + (nb.door?.locked ? 30 : 0);
-        if (cost < (g.get(nb) ?? 1e9)) { g.set(nb, cost); came.set(nb, cur); open.set(nb, cost + h(nb)); }
+        if (cost < (g.get(nb) ?? 1e9)) { g.set(nb, cost); came.set(nb, cur); push(nb, cost + h(nb)); }
       }
     }
     return [];
   }
+
 
   // ---------------------------------------------------------- cars
   buildCars() {
@@ -160,8 +186,6 @@ export class Night {
     N.loomis.setPos(new V(-22, 0, 9.2), Math.PI); N.loomis.state = 'watch'; N.loomis.hunter = true; N.loomis.post = new V(-22, 0, 9.2);
     // TVs on, with sound
     for (const tv of this.town.tvs) { tv.audio = this.sound.ok ? this.sound.tv(tv.pos) : null; }
-    this.caption("Haddonfield, Illinois. October 31st, 1978.", 5);
-    setTimeout(() => this.caption('Loomis is watching the front of the house. Leave by the back.', 5), 5500);
   }
   caption(text, secs) { this.ctxCaption ? this.ctxCaption(text, secs) : this.constructor.cap?.(text, secs); this._cap(text, secs); }
   _cap(text, secs) { (this.captionFn || this['caption_'])?.(text, secs); }
@@ -203,7 +227,7 @@ export class Night {
     for (const n of this.people) {
       n.cool = Math.max(0, (n.cool || 0) - dt);
       if (!n.body.root.visible || n.dead || n.escaped || n.body.limp) continue;
-      const vis = this.inCar ? 0 : this.canSee(n, mChest, lit);
+      const vis = this.inCar || this.cine?.active ? 0 : this.canSee(n, mChest, lit);
       n.seeing = vis;
       if (vis > 0) seenBy++;
       this.think(n, dt, vis, mChest);
@@ -214,15 +238,20 @@ export class Night {
     this.listen(dt, mh);
     this.rescues(dt);
     // scheduled beats of the night
-    this.beats(dt);
+    if (this.beatsOn !== false) this.beats(dt);
     this.hunterLights();
     this.updateCars(dt);
+    this.updateChips(dt);
+    const C = this.cruiser;
+    if (!C.lightsE) { C.lightsE = [0xff2020, 0x2040ff].map((c) => { const L = { x: 0, y: 1.6, z: 0, color: c, intensity: 30, range: 16, see: 0.4, on: false, outdoor: true }; this.W.lights.push(L); return L; }); }
+    C.lightsE.forEach((L, i) => { const p = this.carPoint(C, i ? 0.35 : -0.35, 1.6, -0.2); L.x = p.x; L.y = p.y; L.z = p.z; L.on = !C.away && Math.sin(this.t * 9 + i * Math.PI) > 0; });
     // clock and dawn
     const mins = this.clockStart + this.t * 16 / 60, hh = Math.floor(mins / 60) % 24, mm = Math.floor(mins % 60);
     const clk = `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${hh >= 12 && hh < 24 ? 'PM' : 'AM'}`;
     const el = document.getElementById('clock'); if (el) el.textContent = clk;
-    const tl = document.getElementById('tally'); if (tl) tl.textContent = `${this.kills} dead`;
-    if (this.t > this.dawn) this.end('dawn');
+    const tl = document.getElementById('tally'); if (tl) tl.textContent = this.story ? (this.story.status || (this.chapter ? `Chapter ${this.chapter}` : '')) : `${this.kills} dead`;
+    if (this.beatsOn !== false && !this.story && this.t > this.dawn) this.end('dawn');
+    this.story?.update(dt);
     if (this.sound.ok) this.sound.exert = Math.max(this.sound.exert, shape.speed > 0.5 ? 0.3 : 0);
   }
   after(dt, t) {
@@ -320,12 +349,15 @@ export class Night {
         const dm = Math.hypot(mp.x - n.pos.x, mp.z - n.pos.z);
         if (dm < 3.5 && !this.W.blocked(n.pos.x, n.floorY + 1.2, n.pos.z, mp.x, mp.y + 1.2, mp.z)) { n.path = [{ x: mp.x, y: mp.y, z: mp.z }]; n.want = 3.0; }
         else if (!n.path.length || n.repath < this.t) { n.repath = this.t + 0.6; n.path = this.route(n.pos, mp); n.want = 3.3; }
-        if (dm < 1.9) {
-          this.shape.release(); this.shape.stunned = 1.8; n.rescued = true;
-          this.sound.ok && this.sound.thump(this.shape.headPos(new V()), 1.0, 70);
-          this.caption(`${n.name} hits you and pulls ${g.name} free.`, 3);
-          const f = document.getElementById('fade'); f.style.background = '#200'; f.style.transition = 'none'; f.style.opacity = 0.5; setTimeout(() => { f.style.transition = 'opacity 0.6s'; f.style.opacity = 0; setTimeout(() => f.style.background = '#000', 600); }, 80);
-          this.panic(n, mp, 'fought', true);
+        if (dm < 1.9 && !n.shoving) {
+          n.shoving = true; n.body.pose.shove = true; n.want = 0;
+          setTimeout(() => {
+            n.body.pose.shove = false; n.shoving = false; if (n.dead) return;
+            this.shape.release(); this.shape.stunned = 1.8; n.rescued = true;
+            this.sound.ok && this.sound.thump(this.shape.headPos(new V()), 1.0, 70);
+            this.shape.hurt = 1; this.shape.jolt = 1;
+            this.panic(n, mp, 'fought', true);
+          }, 320);
         }
         return;
       }
@@ -407,7 +439,7 @@ export class Night {
     }
     if (ref.kind === 'phone') { n.state = 'call'; n.timer = 14; this.say(n, 'Hello, police? Somebody is in the house!', 4); return; }
     if (ref.kind === 'out') { n.refuge = null; return this.chooseRefuge(n); }
-    if (ref.kind === 'escape') { if (Math.abs(n.pos.x) > 64) { n.escaped = true; n.body.root.visible = false; this.tally[n.key] = 'escaped'; this.caption(`${n.name} got away.`, 4); } else { const e = this.town.escapes.sort((a, b) => a.distanceTo(n.pos) - b.distanceTo(n.pos))[0]; n.path = [{ x: e.x * 1.1, y: 0, z: e.z }]; n.want = 3; } return; }
+    if (ref.kind === 'escape') { if (Math.abs(n.pos.x) > 64) { n.escaped = true; n.body.root.visible = false; this.tally[n.key] = 'escaped'; } else { const e = this.town.escapes.sort((a, b) => a.distanceTo(n.pos) - b.distanceTo(n.pos))[0]; n.path = [{ x: e.x * 1.1, y: 0, z: e.z }]; n.want = 3; } return; }
     if (ref.kind === 'doyle' || ref.kind === 'elrod') {
       const h = this.town.houses[ref.kind], door = h.doors.front;
       if (ref.kind === 'doyle' && !this.N.laurie.dead && this.N.laurie.state !== 'flee' && !door.broken) {
@@ -432,16 +464,34 @@ export class Night {
     if (shape.pos.distanceTo(n.pos) < 1.3 && R() < 0.5) {
       n.fought = (n.fought || 0) + 1; n.fightCool = this.t + 8;
       this.say(n, pick(['Get away from me!', 'NO!']));
-      this.sound.ok && this.sound.stab(shape.headPos(new V()).add(_v.set(0, -0.15, 0)), false);
-      this.crimson.spray(shape.headPos(new V()).add(_v.set(0, -0.2, 0)), new V(0, -0.5, 1), 10, 1.5);
-      this.caption('She stabs you in the neck with a knitting needle.', 3);
-      this.knockdown(4);
-      this.panic(n, shape.pos, 'fought', true); n.want = 3.6;
+      n.body.pose.lunge = true; n.yaw = Math.atan2(shape.pos.x - n.pos.x, shape.pos.z - n.pos.z);
+      setTimeout(() => {
+        n.body.pose.lunge = false; if (n.dead) return;
+        this.sound.ok && this.sound.stab(shape.headPos(new V()).add(_v.set(0, -0.15, 0)), false);
+        shape.hurt = 1; shape.jolt = 1.4;
+        this.knockdown(4);
+        this.panic(n, shape.pos, 'fought', true); n.want = 3.6;
+      }, 300);
     }
   }
 
   // ---------------------------------------------------------- hunters
+  // a patrolman or a groundskeeper: walks a beat with a flashlight, checks noises, and if he
+  // gets a good look at you the chapter is lost (he doesn't shoot)
+  guardThink(n, dt, vis, mChest) {
+    const P = n.body.pose; P.light = n.flashOn = true; P.aim = false;
+    if (vis > 0) { n.aware += dt * vis * 2.4; n.lastSeen = this.shape.pos.clone(); P.look = mChest; if (n.aware > 0.35 && n.say <= 0) this.say(n, pick(['Hey! Who is that?', "Who's there?", 'Hold it right there!']), 2); }
+    else n.aware = Math.max(0, n.aware - dt * 0.3);
+    if (n.aware >= 1 && this.story) { this.story.spotted(n); n.aware = 0; return; }
+    if (n.state === 'search') {
+      if (!n.path.length) { n.want = 0; n.look2 = (n.look2 || 0) + dt; P.look = (n.lastSeen || n.pos).clone().add(new V(Math.sin(this.t * 1.3) * 5, 1.4, Math.cos(this.t) * 5)); if (n.look2 > 5) { n.look2 = 0; n.state = 'patrol'; this.say(n, pick(['Must have been a cat.', 'Nothing.', 'Kids.']), 2); } }
+      return;
+    }
+    n.state = 'patrol';
+    if (!n.path.length && n.beat?.length) { n.leg = ((n.leg ?? -1) + 1) % n.beat.length; n.path = this.route(n.pos, n.beat[n.leg]); n.want = n.walk || 1.15; if (!n.path.length) n.path = [n.beat[n.leg]]; }
+  }
   hunt(n, dt, vis, mChest) {
+    if (n.guard) return this.guardThink(n, dt, vis, mChest);
     const shape = this.shape, mp = shape.pos, P = n.body.pose;
     P.light = n.flashOn = n.state !== 'watch' || this.t > 1e9;
     if (vis > 0) { n.aware += dt * 4 * vis; n.lastSeen = mp.clone(); } else n.aware = Math.max(0, n.aware - dt * 0.4);
@@ -489,16 +539,34 @@ export class Night {
     const shape = this.shape;
     shape.hp--; this.crimson.spray(at, at.clone().sub(from).normalize(), 14, 2.5);
     this.sound.ok && this.sound.thump(at, 0.5, 80);
-    const f = document.getElementById('fade'); f.style.background = '#300'; f.style.transition = 'none'; f.style.opacity = 0.45; setTimeout(() => { f.style.transition = 'opacity 0.5s'; f.style.opacity = 0; setTimeout(() => f.style.background = '#000', 500); }, 60);
-    if (shape.hp <= 0) { this.caption('You go down.', 3); this.knockdown(7); shape.hp = 6; }
+    shape.hurt = Math.max(shape.hurt || 0, 0.7); shape.jolt = 0.8;
+    if (shape.hp <= 0) { this.knockdown(7); shape.hp = 6; if (this.story?.flags) this.story.flags.shotDown = true; }
   }
   knockdown(secs) {
-    const shape = this.shape; shape.down = secs;
-    const f = document.getElementById('fade'); f.classList.add('on');
+    const shape = this.shape; shape.down = secs; shape.downDur = secs;
     this.sound.ok && this.sound.bodyFall(shape.pos.clone().add(_v.set(0, 0.2, 0)));
     if (shape.grabbing) shape.release();
-    const tick = () => { shape.down -= 0.25; if (shape.down > 0) setTimeout(tick, 250); else { f.classList.remove('on'); this.caption('...and you sit up.', 3); this.sound.ok && this.sound.sting(true); } };
+    const tick = () => { shape.down -= 0.25; if (shape.down > 0) setTimeout(tick, 250); else { shape.down = 0; this.sound.ok && this.sound.sting(true); } };
     setTimeout(tick, 250);
+  }
+  // wood chips off a door or a wall, and a broken door toppling
+  splinters(p, n = 16) {
+    if (!this.chips) {
+      this.chips = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.012, 0.14), new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.8 }), 120);
+      this.chips.count = 0; this.chips.frustumCulled = false; this.scene.add(this.chips); this.chipList = [];
+    }
+    for (let i = 0; i < n; i++) { if (this.chipList.length > 110) this.chipList.shift(); this.chipList.push({ p: p.clone().add(new V((R() - 0.5) * 0.4, (R() - 0.5) * 0.6, (R() - 0.5) * 0.4)), v: new V((R() - 0.5) * 4, R() * 3, (R() - 0.5) * 4), r: new V(R() * 6, R() * 6, R() * 6), w: new V(R() * 20, R() * 20, R() * 20), life: 4 }); }
+  }
+  updateChips(dt) {
+    if (this.fallers) for (const d of this.fallers) { d.falling = Math.min(1, d.falling + dt * 2.2); const k = d.falling * d.falling; d.leaf.rotation.x = -Math.PI / 2 * 0.98 * k; d.leaf.position.set(0, 0.05 * k, 0); if (d.falling >= 1 && !d.landed) { d.landed = true; this.sound.ok && this.sound.thump(new V(d.hx, 0.2, d.hz), 0.9, 50); } }
+    if (!this.chipList) return;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new V(1, 1, 1); let k = 0;
+    for (const c of this.chipList) {
+      c.life -= dt; const fy = this.W.floorAt(c.p.x, c.p.z, c.p.y + 0.2, 0.3);
+      if (c.p.y > fy + 0.01) { c.v.y -= 9.8 * dt; c.p.addScaledVector(c.v, dt); c.r.addScaledVector(c.w, dt); } else { c.p.y = fy + 0.006; c.v.set(0, 0, 0); c.r.x = 0; c.r.z = 0; }
+      m.compose(c.p, q.setFromEuler(e.set(c.r.x, c.r.y, c.r.z)), one); this.chips.setMatrixAt(k++, m);
+    }
+    this.chips.count = k; this.chips.instanceMatrix.needsUpdate = true;
   }
   dispatch(house) {
     if (this.cruiser.coming) return;
@@ -507,7 +575,6 @@ export class Night {
     setTimeout(() => {
       const C = this.cruiser; C.away = false; C.drive = { to: stop, speed: 11, then: () => this.brackettOut(C, house) }; C.x = -80; C.z = stop.z; C.yaw = Math.PI / 2;
       if (this.sound.ok) { C.siren = this.sound.siren(() => new V(C.x, 1.4, C.z)); C.engine = this.sound.engine(() => new V(C.x, 0.6, C.z), () => C.rev || 0); }
-      this.caption('A siren, getting closer.', 3);
     }, 25000);
   }
   brackettOut(C, house) {
@@ -549,7 +616,7 @@ export class Night {
     }
     // end when all five are dead or gone
     const vics = ['annie', 'lynda', 'bob', 'laurie', 'elrod'];
-    if (vics.every((k) => N[k].dead || N[k].escaped) && !this.over && this.b1) setTimeout(() => this.end('done'), 4000), this.over = 'pending';
+    if (!this.story && vics.every((k) => N[k].dead || N[k].escaped) && !this.over && this.b1) setTimeout(() => this.end('done'), 4000), this.over = 'pending';
   }
   ring(house) {
     if (!this.sound.ok) return;
@@ -562,12 +629,11 @@ export class Night {
     a.state = 'seated'; a.want = 0; a.body.pose.sit = 1;
     a.setPos(this.carPoint(car, -0.45, 0.2, 0.35), car.yaw); a.inCar = car;
     this.sound.ok && this.sound.doorSlam(this.carPoint(car, -1, 1, 0.3), 0.7);
-    if (this.inCar === car) { this.caption("She hasn't seen you. Grab her.", 4); a.trapped = true; return; }
+    if (this.inCar === car) { a.trapped = true; return; }
     setTimeout(() => {
       if (a.dead || a.state !== 'seated') return;
       car.drive = { path: [this.carPoint(car, 0, 0, -9), new V(car.x, 0, 2), new V(90, 0, 2)], speed: 6, then: () => { a.body.root.visible = false; car.away = true; setTimeout(() => this.annieReturns(), 120000); } };
       if (this.sound.ok) car.engine = this.sound.engine(() => new V(car.x, 0.6, car.z), () => car.rev || 0);
-      this.caption("Annie's car pulls out and drives off.", 3);
     }, 6000);
   }
   annieReturns() {
@@ -624,6 +690,7 @@ export class Night {
         if (Math.hypot(h.pos.x - mx, h.pos.z - mz) < 0.5 && h.pos.y > d.y0 + 0.5 && h.pos.y < d.y1 && (d.lastHit || 0) < this.t - 0.35) { d.lastHit = this.t; this.bash(d); }
       }
     }
+    if (this.story && !this.inCar) { const sp = this.story.pickPrompt(hp, fwd); if (sp) { prompt = sp.prompt; act = sp.act; } }
     const el = document.getElementById('prompt'); if (el) { el.textContent = vr ? prompt.replace('E —', 'A —') : prompt; el.hidden = !prompt; }
     if (input.use && act) act();
   }
@@ -632,12 +699,12 @@ export class Night {
     this.sound.ok && (d.hp > 0 ? this.sound.thump(p, 1, 60) : this.sound.splinter(p));
     this.hear(p, 26, 'bash');
     for (const n of this.people) if (!n.dead && n.state === 'hide' && n.pos.distanceTo(p) < 6) { n.fear = 1; if (R() < 0.6) this.scream(n); }
-    if (d.hp <= 0) { d.broken = true; d.locked = false; d.leaf.rotation.x = -Math.PI / 2 * 0.98; d.leaf.position.set(0, 0.05, -0.0); d.pivot.rotation.y += 0.4; this.caption('The door gives way.', 2); }
+    if (d.hp <= 0) { d.broken = true; d.locked = false; d.falling = 0; this.fallers = this.fallers || []; this.fallers.push(d); this.splinters(new V((d.hx + d.tip()[0]) / 2, d.y0 + 1.1, (d.hz + d.tip()[1]) / 2)); }
   }
   enterCar(car) {
     this.inCar = car; this.shape.body.root.visible = false; this.shape.knife.visible = true;
     this.sound.ok && this.sound.creak(this.carPoint(car, 1, 1, -0.9), 0.3, 0.5);
-    this.seatMichael(car); this.caption('You wait in the back seat.', 3);
+    this.seatMichael(car);
   }
   leaveCar() {
     const car = this.inCar; this.inCar = null; this.shape.body.root.visible = true;
@@ -668,12 +735,12 @@ export class Night {
         case 'step': { const z = this.W.zoneAt(e.pos.x, e.pos.y + 0.3, e.pos.z); const surf = z ? 'wood' : Math.abs(e.pos.z) < 4.1 ? 'asphalt' : Math.abs(Math.abs(e.pos.z) - 6.85) < 0.8 ? 'asphalt' : 'grass'; S.ok && S.step(e.pos, surf, 0.28 * (e.loud ?? 1)); this.hear(e.pos, (z ? 4.5 : 3) * (e.loud ?? 1), 'step'); break; }
         case 'hit': this.hit(e); break;
         case 'pullout': { S.ok && S.squelch(e.pos, 0.7); this.crimson.spray(e.pos, e.dir, 18, 2.2); break; }
-        case 'thunk': { S.ok && S.thump(e.pos, 0.7, 120); this.caption('The blade goes through into the wall.', 2.5); break; }
+        case 'thunk': { S.ok && S.thump(e.pos, 0.7, 120); this.splinters(e.pos, 6); break; }
         case 'grab': { const n = e.who; n.state = 'held'; S.ok && S.gasp(n.head(new V()), FEMALE(n.key)); this.hear(n.pos, 6, 'struggle'); n.chokeT = 0; if (n.inCar) n.inCar = null; break; }
         case 'drop': { const n = e.who; if (!n.dead) { n.state = 'down'; n.timer = 1.6; } break; }
         case 'choked': { const n = e.who; this.kill(n, 'choke'); shape.release(); break; }
         case 'snap': { const n = e.who; S.ok && S.snap(e.pos); this.kill(n, 'snap'); n.body.face.flush = 0.3; break; }
-        case 'leftKnife': this.caption('You leave the knife where it is.', 2); break;
+        case 'leftKnife': break;
         case 'retook': break;
       }
     }
@@ -738,9 +805,9 @@ export class Night {
       if (this.W.blocked(mh.x, mh.y, mh.z, hd.x, hd.y, hd.z)) continue;
       const g = dt * Math.max(3, 14 - d * 0.35); n.pool -= g; E.pts += g; on = true;
     }
-    if (E.tier === 1 && E.pts >= 60) { E.tier = 2; E.pts = 0; this.caption('Evil Within II. They will see you now, but you are stronger.', 4); this.sound.ok && this.sound.sting(false); }
-    else if (E.tier === 2 && E.pts >= 90) { E.tier = 3; E.t3 = 50; E.pts = 0; this.caption('Evil Within III. Nothing can stop you.', 4); this.sound.ok && this.sound.sting(true); }
-    if (E.tier === 3) { E.t3 -= dt; if (this.sound.ok) this.sound.exert = Math.max(this.sound.exert, 0.8); if (E.t3 <= 0) { E.tier = 2; this.caption('The rage fades.', 2.5); } }
+    if (E.tier === 1 && E.pts >= 60) { E.tier = 2; E.pts = 0; this.shape.pulse = 1; this.sound.ok && this.sound.sting(false); }
+    else if (E.tier === 2 && E.pts >= 90) { E.tier = 3; E.t3 = 50; E.pts = 0; this.shape.pulse = 1.5; this.sound.ok && this.sound.sting(true); }
+    if (E.tier === 3) { E.t3 -= dt; if (this.sound.ok) this.sound.exert = Math.max(this.sound.exert, 0.8); if (E.t3 <= 0) { E.tier = 2; } }
     this.sound.ok && this.sound.stalk(on);
   }
   // Stand still and you can hear frightened hearts through the walls.
@@ -754,7 +821,6 @@ export class Night {
       n.hb = (n.hb ?? 0) - dt;
       if (n.hb <= 0) {
         n.hb = 1.05 - n.fear * 0.5; this.sound.heartbeat(hd, (1 - d / 24) * (0.35 + n.fear * 0.65));
-        if (!this.toldListen) { this.toldListen = true; this.caption('Stand still and listen. You can hear their hearts.', 4); }
       }
     }
   }
@@ -773,7 +839,7 @@ export class Night {
   // --------------------------------------------------------- objective
   // who to go after next and where to walk: { text, point }
   objective() {
-    const o = this.objective_(); if (!o) return o;
+    const o = this.story ? this.story.objective() : this.objective_(); if (!o) return o;
     // steer by the walking route (doors, stairs) rather than straight through walls
     const mp = this.shape.pos, path = this.route(mp, o.who && o.inside ? o.who.pos : o.point);
     let next = o.point, len = 0, prev = mp;
