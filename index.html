@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Courier+Prime&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <canvas id="view" tabindex="0"></canvas>
@@ -29,6 +29,7 @@
   <h1 class="logo">HALLOWEEN<span>VR</span></h1>
   <p class="date">Haddonfield, Illinois &middot; October 31, 1978</p>
   <p class="lede">You are Michael Myers.<br>Fifteen years ago, on this night, you came home.<br>You've come home again.</p>
+  <div id="chapters" class="chapters"></div>
   <div class="actions">
     <button id="enterVR">Enter VR</button>
     <button id="playDesktop">Play on desktop</button>
@@ -39,11 +40,12 @@
   <div class="how" id="how" hidden>
     <p><b>Quest.</b> Left stick walks. You never run, but when nobody is watching you, you close the distance faster. Right stick turns. Your right hand holds the knife: stab hard and it goes in. Left grip on a throat strangles and lifts. A opens doors and gets into cars. Right grip lets go of a knife stuck in a wall; grip the handle to take it back. B pauses.</p>
     <p><b>Desktop.</b> WASD walk, mouse look, click to stab, hold right mouse to grab a throat, E for doors and cars, Q to tilt your head, N for free camera, Esc to pause.</p>
-    <p><b>The Shape.</b> Watch someone who hasn't noticed you and you feed on their fear: Evil Within. At tier I you are hard to see and quiet but slow; tier II, they can see you, but you are stronger; tier III, for fifty seconds, you are fast and nothing survives you. Stand still to hear frightened hearts through the walls. The orange arrow points to the nearest of them. Be careful: friends will fight to pull a friend out of your hands.</p>
-    <p><b>The night.</b> Annie is at the Wallace house across from the Doyles. Lynda and Bob are coming over. Laurie is babysitting at the Doyle house. Dr. Loomis is watching your old house, and he is armed. If they see you, they run, they lock doors, they call Sheriff Brackett. Stay in the dark. Be patient. Dawn ends it.</p>
+    <p><b>The story.</b> Five chapters, the night it happened. Break into Nichols Hardware for a mask and a knife. Stalk Laurie home from Haddonfield High. Take your sister's headstone from the cemetery. Come back to Lampkin Lane on Halloween night. Then find the girl who got away. Finish a chapter to unlock the next.</p>
+    <p><b>Stealth.</b> In the first three chapters, if the wrong person gets a good look at you, you start that chapter over. Stay in the dark, stay behind things, and keep out of flashlight beams. The orange arrow always points to what you need next.</p>
+    <p><b>The Shape.</b> Watch someone who hasn't noticed you to feed Evil Within; at tier III you are fast and nothing survives you. Stand still to hear frightened hearts through the walls. Friends will fight to pull a friend out of your hands.</p>
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=5"></script>
+<script type="module" src="src/main.js?v=6"></script>
 </body>
 </html>
